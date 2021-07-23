@@ -1,0 +1,39 @@
+<html>
+
+<head>
+    <title>WebJVM Testing Page</title>
+    <script type="module">
+        console.log('Importing modules...');
+
+        import init, { WebJvmRuntime } from './pkg/webjvm.js';
+
+        async function run() {
+            await init();
+            console.log('Called init, downloading content....');
+        
+            const stdlib = await fetch('./java/skinny-stdlib.jar');
+            const cls = await fetch('./java/MainTest.class');
+
+            const stdlibBuffer = await stdlib.arrayBuffer();
+            const classBuffer = await cls.arrayBuffer();
+
+            console.log('Downloaded content, adding to VM classpath...');
+
+            const jvm = new WebJvmRuntime();
+            jvm.addClasspathJar(new Uint8Array(stdlibBuffer));
+            jvm.addClasspathEntry(new Uint8Array(classBuffer));
+
+            console.log('Executing JVM...');
+            jvm.executeMain();
+            console.log('Finished executing!');
+        }
+
+        run();
+    </script>
+</head>
+
+<body>
+    Executing WebJVM!
+</body>
+
+</html>
