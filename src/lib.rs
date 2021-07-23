@@ -1,5 +1,6 @@
 pub mod exec;
 pub mod util;
+pub mod java;
 
 use std::io::Cursor;
 
@@ -52,40 +53,45 @@ impl Classpath {
     }
 
     pub fn get_virtual_method<'a>(
-        &self,
+        &'a self,
         declaring_class: &'a ClassFile,
         method_name: &str,
         method_descriptor: &str,
     ) -> Option<&'a MethodInfo> {
-        declaring_class.methods.iter().find(|method| {
-            if !method.access_flags.contains(MethodAccessFlags::STATIC) {
-                let current_name =
-                    get_constant_string(&declaring_class.const_pool, method.name_index);
-                if current_name == method_name {
-                    let current_descriptor =
-                        get_constant_string(&declaring_class.const_pool, method.descriptor_index);
-                    if current_descriptor == method_descriptor {
-                        return true;
+        declaring_class
+            .methods
+            .iter()
+            .find(|method| {
+                if !method.access_flags.contains(MethodAccessFlags::STATIC) {
+                    let current_name =
+                        get_constant_string(&declaring_class.const_pool, method.name_index);
+                    if current_name == method_name {
+                        let current_descriptor = get_constant_string(
+                            &declaring_class.const_pool,
+                            method.descriptor_index,
+                        );
+                        if current_descriptor == method_descriptor {
+                            return true;
+                        }
                     }
                 }
-            }
 
-            false
-        })
-        /*.or_else(|| {
-            if declaring_class.super_class == 0 {
-                None
-            } else {
-                let superclass_name = get_constant_string(
-                    &declaring_class.const_pool,
-                    declaring_class.super_class,
-                );
-                let superclass = self
-                    .get_classpath_entry(superclass_name)
-                    .expect("class not found");
-                self.get_virtual_method(superclass, method_name, method_descriptor)
-            }
-        })*/
+                false
+            })
+            .or_else(|| {
+                if declaring_class.super_class == 0 {
+                    None
+                } else {
+                    let superclass_name = get_constant_string(
+                        &declaring_class.const_pool,
+                        declaring_class.super_class,
+                    );
+                    let superclass = self
+                        .get_classpath_entry(superclass_name)
+                        .expect("class not found");
+                    self.get_virtual_method(superclass, method_name, method_descriptor)
+                }
+            })
     }
 
     pub fn get_main_method(&self) -> Option<(&ClassFile, &MethodInfo)> {

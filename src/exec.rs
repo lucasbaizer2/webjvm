@@ -1,6 +1,6 @@
-use crate::{util::*, Classpath};
+use crate::{java::MethodDescriptor, util::*, Classpath};
 use classfile_parser::{
-    attribute_info::code_attribute_parser,
+    attribute_info::{code_attribute_parser, CodeAttribute},
     code_attribute::{code_parser, Instruction},
     constant_info::ConstantInfo,
     method_info::MethodInfo,
@@ -20,6 +20,7 @@ pub enum JavaValue {
     Boolean(bool),
     Object(Option<usize>),
     Array(Option<Rc<Vec<JavaValue>>>),
+    InternalUnset,
 }
 
 #[derive(Debug)]
@@ -28,14 +29,16 @@ pub struct JavaObject {
     pub instance_fields: HashMap<String, JavaValue>,
 }
 
+#[derive(Debug)]
 pub struct CallStackFrame {
     pub container_class: String,
     pub container_method: String,
+    pub metadata: CodeAttribute,
     pub instructions: Vec<(usize, Instruction)>,
     pub state: CallStackFrameState,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CallStackFrameState {
     pub line_number: u32,
     pub instruction_offset: usize,
@@ -74,9 +77,10 @@ impl JvmExecutor {
             state: CallStackFrameState {
                 line_number: 0,
                 instruction_offset: 0,
-                lvt: Vec::with_capacity(code_attribute.max_locals as usize),
+                lvt: vec![JavaValue::InternalUnset; code_attribute.max_locals as usize],
                 stack: Vec::with_capacity(code_attribute.max_stack as usize),
             },
+            metadata: code_attribute,
         }
     }
 
@@ -142,17 +146,36 @@ impl JvmExecutor {
                             x => panic!("bad name and type: {:?}", x),
                         };
 
-                        let declaring_class = &self
+                        let declaring_class = self
                             .classpath
                             .get_classpath_entry(class_str)
                             .expect("class not found");
-                        let method = self.classpath.get_virtual_method(
-                            declaring_class,
-                            method_str.0,
-                            method_str.1,
-                        );
+                        let method = self
+                            .classpath
+                            .get_virtual_method(declaring_class, method_str.0, method_str.1)
+                            .expect("method not found");
+                        let parsed_descriptor =
+                            MethodDescriptor::new(method_str.1).expect("bad method descriptor");
+                        log(&format!("{:?}", parsed_descriptor));
 
-                        log(&format!("{:?}", method));
+                        let mut stack_frame =
+                            JvmExecutor::create_stack_frame(declaring_class, method);
+                        for i in 0..parsed_descriptor.argument_types.len() {
+                            stack_frame.state.lvt[parsed_descriptor.argument_types.len() - i] =
+                                state.stack.pop().expect("stack underflow");
+                        }
+                        let object_instance = state.stack.pop().expect("stack underflow");
+                        match object_instance {
+                            JavaValue::Object(ptr) => match ptr {
+                                None => panic!("NullPointerException"),
+                                _ => (),
+                            },
+                            _ => panic!("bad object ref"),
+                        };
+                        stack_frame.state.lvt[0] = object_instance;
+
+                        log(&format!("Stack frame = {:?}", stack_frame));
+                        log(&format!("Method = {:?}", method));
                     }
                     x => panic!("bad method ref: {:?}", x),
                 }
@@ -178,7 +201,6 @@ impl JvmExecutor {
                 state.stack.push(value);
             }
             Instruction::Return => {
-                log(&format!("unhandled instruction: {:?}", state.stack));
                 self.call_stack_frames.pop().unwrap();
                 return;
             }
