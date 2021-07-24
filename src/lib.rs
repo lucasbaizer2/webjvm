@@ -18,6 +18,7 @@ pub struct JniEnv<'a> {
     jvm: &'a Jvm,
     pub container_class: String,
     pub container_instance: Option<usize>,
+    pub parameters: Vec<JavaValue>,
 }
 
 impl<'a> JniEnv<'a> {
@@ -26,6 +27,7 @@ impl<'a> JniEnv<'a> {
             jvm,
             container_class: String::new(),
             container_instance: None,
+            parameters: Vec::new(),
         }
     }
 
@@ -61,7 +63,7 @@ impl<'a> JniEnv<'a> {
             .classpath
             .get_classpath_entry(declaring_class)
             .expect(&format!("NoClassDefError: {}", declaring_class));
-        let method = self
+        let (method_class, method) = self
             .jvm
             .classpath
             .get_method(invoke_type, class, method_name, method_descriptor)
@@ -70,7 +72,7 @@ impl<'a> JniEnv<'a> {
                 declaring_class, method_name, method_descriptor
             ));
 
-        let mut frame = Jvm::create_stack_frame(class, method);
+        let mut frame = Jvm::create_stack_frame(method_class, method);
         frame.state.lvt[0] = JavaValue::Object(Some(instance_id));
         for i in 0..params.len() {
             frame.state.lvt[i + 1] = params[i].clone();
@@ -188,7 +190,7 @@ impl Classpath {
         declaring_class: &'a ClassFile,
         method_name: &str,
         method_descriptor: &str,
-    ) -> Option<&'a MethodInfo> {
+    ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
         match invoke_type {
             InvokeType::Special => {
                 self.get_special_method(declaring_class, method_name, method_descriptor)
@@ -207,7 +209,7 @@ impl Classpath {
         declaring_class: &'a ClassFile,
         method_name: &str,
         method_descriptor: &str,
-    ) -> Option<&'a MethodInfo> {
+    ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
         self.get_special_method(declaring_class, method_name, method_descriptor)
             .or_else(|| {
                 if declaring_class.super_class == 0 {
@@ -230,22 +232,28 @@ impl Classpath {
         declaring_class: &'a ClassFile,
         method_name: &str,
         method_descriptor: &str,
-    ) -> Option<&'a MethodInfo> {
-        declaring_class.methods.iter().find(|method| {
-            if method.access_flags.contains(MethodAccessFlags::STATIC) {
-                let current_name =
-                    get_constant_string(&declaring_class.const_pool, method.name_index);
-                if current_name == method_name {
-                    let current_descriptor =
-                        get_constant_string(&declaring_class.const_pool, method.descriptor_index);
-                    if current_descriptor == method_descriptor {
-                        return true;
+    ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
+        declaring_class
+            .methods
+            .iter()
+            .find(|method| {
+                if method.access_flags.contains(MethodAccessFlags::STATIC) {
+                    let current_name =
+                        get_constant_string(&declaring_class.const_pool, method.name_index);
+                    if current_name == method_name {
+                        let current_descriptor = get_constant_string(
+                            &declaring_class.const_pool,
+                            method.descriptor_index,
+                        );
+                        if current_descriptor == method_descriptor {
+                            return true;
+                        }
                     }
                 }
-            }
 
-            false
-        })
+                false
+            })
+            .map(|method| (declaring_class, method))
     }
 
     pub fn get_special_method<'a>(
@@ -253,22 +261,28 @@ impl Classpath {
         declaring_class: &'a ClassFile,
         method_name: &str,
         method_descriptor: &str,
-    ) -> Option<&'a MethodInfo> {
-        declaring_class.methods.iter().find(|method| {
-            if !method.access_flags.contains(MethodAccessFlags::STATIC) {
-                let current_name =
-                    get_constant_string(&declaring_class.const_pool, method.name_index);
-                if current_name == method_name {
-                    let current_descriptor =
-                        get_constant_string(&declaring_class.const_pool, method.descriptor_index);
-                    if current_descriptor == method_descriptor {
-                        return true;
+    ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
+        declaring_class
+            .methods
+            .iter()
+            .find(|method| {
+                if !method.access_flags.contains(MethodAccessFlags::STATIC) {
+                    let current_name =
+                        get_constant_string(&declaring_class.const_pool, method.name_index);
+                    if current_name == method_name {
+                        let current_descriptor = get_constant_string(
+                            &declaring_class.const_pool,
+                            method.descriptor_index,
+                        );
+                        if current_descriptor == method_descriptor {
+                            return true;
+                        }
                     }
                 }
-            }
 
-            false
-        })
+                false
+            })
+            .map(|method| (declaring_class, method))
     }
 
     pub fn get_main_method(&self) -> Option<(&ClassFile, &MethodInfo)> {
@@ -279,7 +293,7 @@ impl Classpath {
             if let Some(main_method) =
                 self.get_static_method(file, "main", "([Ljava/lang/String;)V")
             {
-                return Some((file, main_method));
+                return Some((file, main_method.1));
             }
         }
 

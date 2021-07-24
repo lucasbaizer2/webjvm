@@ -31,9 +31,12 @@ pub mod System;
 pub mod Object;
 #[allow(non_snake_case)]
 pub mod Class;
+#[allow(non_snake_case)]
+pub mod Unsafe;
 
 pub fn initialize(cp: &mut Classpath) {
     System::initialize(cp);
     Object::initialize(cp);
     Class::initialize(cp);
+    Unsafe::initialize(cp);
 }

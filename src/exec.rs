@@ -1,6 +1,6 @@
 use crate::{java::MethodDescriptor, util::*, Classpath, InvokeType, JniEnv};
 use classfile_parser::{
-    attribute_info::{code_attribute_parser, CodeAttribute},
+    attribute_info::{code_attribute_parser, method_parameters_attribute_parser, CodeAttribute},
     code_attribute::{code_parser, Instruction},
     constant_info::{ConstantInfo, MethodRefConstant},
     field_info::{FieldAccessFlags, FieldInfo},
@@ -138,10 +138,24 @@ impl Jvm {
 
     pub fn create_stack_frame(cls: &ClassFile, method: &MethodInfo) -> CallStackFrame {
         let container_class = get_constant_string(&cls.const_pool, cls.this_class).clone();
+        log(&format!(
+            "n, d = {}, {}",
+            method.name_index, method.descriptor_index
+        ));
         let container_method = get_constant_string(&cls.const_pool, method.name_index).clone()
             + get_constant_string(&cls.const_pool, method.descriptor_index);
 
         if method.access_flags.contains(MethodAccessFlags::NATIVE) {
+            // let parameters_info = method
+            //     .attributes
+            //     .iter()
+            //     .find(|attribute| {
+            //         get_constant_string(&cls.const_pool, attribute.attribute_name_index)
+            //             == "MethodParameters"
+            //     })
+            //     .expect("missing MethodParameters");
+            // let (_, mp) = method_parameters_attribute_parser(&parameters_info.info).unwrap();
+
             return CallStackFrame {
                 container_class,
                 container_method,
@@ -151,7 +165,8 @@ impl Jvm {
                 state: CallStackFrameState {
                     line_number: 0,
                     instruction_offset: 0,
-                    lvt: Vec::new(),
+                    // lvt: vec![JavaValue::InternalUnset; mp.parameters.len()],
+                    lvt: vec![JavaValue::InternalUnset; 16], // TODO: fix this hacky workaround
                     stack: Vec::new(),
                     return_stack_value: None,
                 },
@@ -251,7 +266,7 @@ impl Jvm {
                     heap.loaded_classes[id].class_object_id = class_object_id;
                 }
 
-                if let Some(static_initializer) = self
+                if let Some((static_class, static_initializer)) = self
                     .classpath
                     .get_static_method(class_file, "<clinit>", "()V")
                 {
@@ -259,7 +274,7 @@ impl Jvm {
                         let csf = self.call_stack_frames.borrow();
                         csf.len()
                     };
-                    let clinit_frame = Jvm::create_stack_frame(class_file, static_initializer);
+                    let clinit_frame = Jvm::create_stack_frame(static_class, static_initializer);
                     log(&format!("Static initializer = {:?}", clinit_frame));
                     self.push_call_stack_frame(clinit_frame);
                     self.executor.step_until_stack_depth(&self, depth);
@@ -302,13 +317,7 @@ impl Jvm {
             }
 
             class_name = get_constant_string(&cls.const_pool, cls.super_class);
-            log(&format!("Propagating up the stack to: {}", class_name));
         }
-
-        log(&format!(
-            "New instance!!! type={}, fields={:?}",
-            root_class_name, instance_fields
-        ));
 
         JavaObject {
             class_id: root_class_id.unwrap(),
@@ -392,12 +401,7 @@ impl InstructionExecutor {
         jvm.ensure_class_loaded("java/lang/String");
         jvm.ensure_class_loaded("java/lang/Class");
 
-        let env = JniEnv {
-            jvm,
-            container_class: String::new(),
-            container_instance: None,
-        };
-
+        let env = JniEnv::empty(jvm);
         let cos = env.new_instance("webjvm/io/ConsoleOutputStream");
         env.invoke_instance_method(
             InvokeType::Special,
@@ -438,33 +442,72 @@ impl InstructionExecutor {
     fn create_stack_frame(
         &self,
         jvm: &Jvm,
+        state: &mut CallStackFrameState,
         invoke_type: InvokeType,
         const_pool: &Vec<ConstantInfo>,
         mr: &MethodRefConstant,
-    ) -> (CallStackFrame, MethodDescriptor) {
+    ) -> CallStackFrame {
         let class_str = get_constant_string(const_pool, mr.class_index);
         jvm.ensure_class_loaded(class_str);
 
         let method_str = get_constant_name_and_type(const_pool, mr.name_and_type_index);
+        let parsed_descriptor = MethodDescriptor::new(method_str.1).expect("bad method descriptor");
 
+        let mut args = Vec::with_capacity(match invoke_type {
+            InvokeType::Static => parsed_descriptor.argument_types.len(),
+            _ => parsed_descriptor.argument_types.len() + 1,
+        });
+        for _ in 0..parsed_descriptor.argument_types.len() {
+            args.push(state.stack.pop().expect("stack underflow"));
+        }
+
+        let instance_id = match invoke_type {
+            InvokeType::Static => None,
+            _ => {
+                let object_instance = state.stack.pop().expect("stack underflow");
+                let instance_id = match object_instance {
+                    JavaValue::Object(instance_id) => match instance_id {
+                        None => panic!("NullPointerException"),
+                        Some(inner_id) => inner_id,
+                    },
+                    _ => panic!("bad object ref"),
+                };
+                args.push(object_instance);
+                Some(instance_id)
+            }
+        };
+
+        args.reverse();
+
+        let declaring_class_name = match invoke_type {
+            InvokeType::Virtual => {
+                let heap = jvm.heap.borrow();
+                let instance = &heap
+                    .object_heap_map
+                    .get(&instance_id.unwrap())
+                    .expect("bad object ref");
+                let class = &heap.loaded_classes[instance.class_id];
+                class.java_type.clone()
+            }
+            _ => class_str.clone(),
+        };
         let declaring_class = jvm
             .classpath
-            .get_classpath_entry(class_str)
+            .get_classpath_entry(declaring_class_name.as_str())
             .expect("NoClassDefError");
-        let method = jvm
+        let (method_class, method) = jvm
             .classpath
             .get_method(invoke_type, declaring_class, method_str.0, method_str.1)
             .expect("NoSuchMethodError");
 
-        let parsed_descriptor = MethodDescriptor::new(method_str.1).expect("bad method descriptor");
-
-        (
-            Jvm::create_stack_frame(declaring_class, method),
-            parsed_descriptor,
-        )
+        let mut frame = Jvm::create_stack_frame(method_class, method);
+        for i in 0..args.len() {
+            frame.state.lvt[i] = args.remove(0);
+        }
+        frame
     }
 
-    fn step_native(&self, jvm: &Jvm, frame: &CallStackFrame) {
+    fn step_native(&self, jvm: &Jvm, frame: &CallStackFrame) -> Option<JavaValue> {
         let method_name = &frame.container_method[0..frame.container_method.find('(').unwrap()];
         let jni_name = format!(
             "Java_{}_{}",
@@ -485,8 +528,44 @@ impl InstructionExecutor {
                 }),
                 _ => None,
             },
+            parameters: frame.state.lvt.clone(),
         };
-        method.invoke(&env);
+        method.invoke(&env)
+    }
+
+    fn push_constant(
+        &self,
+        jvm: &Jvm,
+        state: &mut CallStackFrameState,
+        const_pool: &Vec<ConstantInfo>,
+        constant_id: usize,
+    ) {
+        let value = match &const_pool[constant_id - 1] {
+            ConstantInfo::Integer(ic) => JavaValue::Int(ic.value),
+            ConstantInfo::Float(fc) => JavaValue::Float(fc.value),
+            ConstantInfo::String(sc) => match &const_pool[sc.string_index as usize - 1] {
+                ConstantInfo::Utf8(inner) => {
+                    let str = inner.utf8_string.clone();
+                    let obj = jvm.create_string_object(str.as_str());
+                    JavaValue::Object(Some(obj))
+                }
+                x => panic!("bad string constant definition: {:?}", x),
+            },
+            ConstantInfo::Class(cc) => {
+                let class_name = get_constant_string(&const_pool, cc.name_index);
+
+                let heap = jvm.heap.borrow();
+                let class_id = *heap
+                    .loaded_classes_lookup
+                    .get(class_name)
+                    .expect("NoClassDefError");
+                let class_object_id = heap.loaded_classes[class_id].class_object_id;
+
+                JavaValue::Object(Some(class_object_id))
+            }
+            x => panic!("bad constant: {:?}", x),
+        };
+        state.stack.push(value);
     }
 
     pub fn step(&self, jvm: &Jvm) {
@@ -498,15 +577,20 @@ impl InstructionExecutor {
             };
 
             if is_native_frame {
-                {
+                let return_value = {
                     let csf = jvm.call_stack_frames.borrow();
                     let frame = csf.last().expect("no stack frame present");
 
-                    self.step_native(jvm, &frame);
-                }
+                    self.step_native(jvm, &frame)
+                };
 
                 let mut csf = jvm.call_stack_frames.borrow_mut();
                 csf.pop().unwrap();
+                csf.last_mut()
+                    .expect("stack underflow")
+                    .state
+                    .return_stack_value = return_value;
+
                 return;
             } else {
                 let csf = jvm.call_stack_frames.borrow();
@@ -551,18 +635,49 @@ impl InstructionExecutor {
             }};
         }
 
+        macro_rules! branch_to {
+            ( $offset:expr ) => {{
+                state.instruction_offset =
+                    (state.instruction_offset as isize + $offset as isize) as usize;
+            }};
+        }
+
         let expected_offset = state.instruction_offset;
 
         match &insn.1 {
+            Instruction::Aastore => {
+                let value = state.stack.pop().expect("stack underflow");
+                let index = match state.stack.pop().expect("stack underflow") {
+                    JavaValue::Int(i) => i,
+                    _ => panic!("invalid array index"),
+                };
+                let arrayref_id = match state.stack.pop().expect("stack underflow") {
+                    JavaValue::Array(id) => id,
+                    _ => panic!("invalid array instance ID"),
+                };
+
+                let mut heap = jvm.heap.borrow_mut();
+                let arrayref = heap
+                    .array_heap_map
+                    .get_mut(&arrayref_id)
+                    .expect("invalid array instance ID");
+                arrayref.values[index as usize] = value;
+            }
             Instruction::Aconstnull => {
                 state.stack.push(JavaValue::Object(None));
             }
+            Instruction::Aload(register) => state.stack.push(state.lvt[*register as usize].clone()),
             Instruction::Aload0 => state.stack.push(state.lvt[0].clone()),
             Instruction::Aload1 => state.stack.push(state.lvt[1].clone()),
             Instruction::Aload2 => state.stack.push(state.lvt[2].clone()),
+            Instruction::Aload3 => state.stack.push(state.lvt[3].clone()),
+            Instruction::Astore(register) => {
+                state.lvt[*register as usize] = state.stack.pop().expect("stack underflow")
+            }
             Instruction::Astore0 => state.lvt[0] = state.stack.pop().expect("stack underflow"),
             Instruction::Astore1 => state.lvt[1] = state.stack.pop().expect("stack underflow"),
             Instruction::Astore2 => state.lvt[2] = state.stack.pop().expect("stack underflow"),
+            Instruction::Astore3 => state.lvt[3] = state.stack.pop().expect("stack underflow"),
             Instruction::Anewarray(type_ref_id) => {
                 let const_pool = use_const_pool!();
                 let type_str = get_constant_string(const_pool, *type_ref_id);
@@ -589,6 +704,7 @@ impl InstructionExecutor {
 
                 return;
             }
+            Instruction::Bipush(val) => state.stack.push(JavaValue::Int(*val as i32)),
             Instruction::Checkcast(type_id) => {
                 let test = state.stack.last().expect("stack underflow");
                 // TODO: test type
@@ -596,6 +712,9 @@ impl InstructionExecutor {
             Instruction::Dup => {
                 let top = state.stack.last().expect("stack underflow").clone();
                 state.stack.push(top);
+            }
+            Instruction::Goto(offset) => {
+                branch_to!(*offset);
             }
             Instruction::Getfield(field_ref_id) => {
                 let const_pool = use_const_pool!();
@@ -644,16 +763,42 @@ impl InstructionExecutor {
             Instruction::Iconst4 => state.stack.push(JavaValue::Int(4)),
             Instruction::Iconst5 => state.stack.push(JavaValue::Int(5)),
             Instruction::Iconstm1 => state.stack.push(JavaValue::Int(-1)),
+            Instruction::Ifne(offset) => {
+                let val = state.stack.pop().expect("stack underflow");
+                let is_zero = match val {
+                    JavaValue::Byte(b) => b == 0,
+                    JavaValue::Short(b) => b == 0,
+                    JavaValue::Int(b) => b == 0,
+                    JavaValue::Long(b) => b == 0,
+                    JavaValue::Char(b) => b == 0,
+                    JavaValue::Boolean(b) => !b,
+                    _ => panic!("ifne expecting integral value"),
+                };
+                if !is_zero {
+                    branch_to!(*offset);
+                }
+            }
             Instruction::Ifnonnull(offset) => {
                 let val = state.stack.pop().expect("stack underflow");
                 match val {
                     JavaValue::Object(ptr) => match ptr {
-                        Some(_) => state.instruction_offset += *offset as usize,
+                        Some(_) => branch_to!(*offset),
                         None => (),
                     },
                     _ => panic!("ifnonnull expecting object"),
                 };
             }
+            Instruction::Ifnull(offset) => {
+                let val = state.stack.pop().expect("stack underflow");
+                match val {
+                    JavaValue::Object(ptr) => match ptr {
+                        None => branch_to!(*offset),
+                        Some(_) => (),
+                    },
+                    _ => panic!("ifnull expecting object"),
+                };
+            }
+            Instruction::Iload(register) => state.stack.push(state.lvt[*register as usize].clone()),
             Instruction::Iload0 => state.stack.push(state.lvt[0].clone()),
             Instruction::Iload1 => state.stack.push(state.lvt[1].clone()),
             Instruction::Iload2 => state.stack.push(state.lvt[2].clone()),
@@ -663,22 +808,13 @@ impl InstructionExecutor {
                 match &const_pool[*method_ref_id as usize - 1] {
                     ConstantInfo::MethodRef(mr) => {
                         log(&format!("Stack: {:?}", state.stack));
-                        let (mut stack_frame, parsed_descriptor) =
-                            self.create_stack_frame(jvm, InvokeType::Special, const_pool, mr);
-
-                        for i in 0..parsed_descriptor.argument_types.len() {
-                            stack_frame.state.lvt[parsed_descriptor.argument_types.len() - i] =
-                                state.stack.pop().expect("stack underflow");
-                        }
-                        let object_instance = state.stack.pop().expect("stack underflow");
-                        match object_instance {
-                            JavaValue::Object(ptr) => match ptr {
-                                None => panic!("NullPointerException"),
-                                _ => (),
-                            },
-                            _ => panic!("bad object ref"),
-                        };
-                        stack_frame.state.lvt[0] = object_instance;
+                        let stack_frame = self.create_stack_frame(
+                            jvm,
+                            &mut state,
+                            InvokeType::Special,
+                            const_pool,
+                            mr,
+                        );
 
                         log(&format!("Special stack frame = {:?}", stack_frame));
 
@@ -696,14 +832,13 @@ impl InstructionExecutor {
                 let const_pool = use_const_pool!();
                 match &const_pool[*method_ref_id as usize - 1] {
                     ConstantInfo::MethodRef(mr) => {
-                        let (mut stack_frame, parsed_descriptor) =
-                            self.create_stack_frame(jvm, InvokeType::Static, const_pool, mr);
-
-                        for i in 0..parsed_descriptor.argument_types.len() {
-                            stack_frame.state.lvt[parsed_descriptor.argument_types.len() - i - 1] =
-                                state.stack.pop().expect("stack underflow");
-                        }
-
+                        let stack_frame = self.create_stack_frame(
+                            jvm,
+                            &mut state,
+                            InvokeType::Static,
+                            const_pool,
+                            mr,
+                        );
                         log(&format!("Static stack frame = {:?}", stack_frame));
 
                         {
@@ -716,66 +851,64 @@ impl InstructionExecutor {
                     x => panic!("bad method ref: {:?}", x),
                 }
             }
-            Instruction::Invokevirtual(method_ref_id) => {
+            Instruction::Invokevirtual(index) | Instruction::Invokeinterface { index, .. } => {
                 let const_pool = use_const_pool!();
-                match &const_pool[*method_ref_id as usize - 1] {
-                    ConstantInfo::MethodRef(mr) => {
-                        let (mut stack_frame, parsed_descriptor) =
-                            self.create_stack_frame(jvm, InvokeType::Virtual, const_pool, mr);
-
-                        for i in 0..parsed_descriptor.argument_types.len() {
-                            stack_frame.state.lvt[parsed_descriptor.argument_types.len() - i] =
-                                state.stack.pop().expect("stack underflow");
-                        }
-                        let object_instance = state.stack.pop().expect("stack underflow");
-                        match object_instance {
-                            JavaValue::Object(ptr) => match ptr {
-                                None => panic!("NullPointerException"),
-                                _ => (),
-                            },
-                            _ => panic!("bad object ref"),
-                        };
-                        stack_frame.state.lvt[0] = object_instance;
-
-                        log(&format!("Virtual stack frame = {:?}", stack_frame));
-
-                        {
-                            let mut csf = jvm.call_stack_frames.borrow_mut();
-                            csf.push(stack_frame);
-                        }
-                        self.step_until_stack_depth(jvm, depth);
-                        update_stack!();
-                    }
+                let mr = match &const_pool[*index as usize - 1] {
+                    ConstantInfo::MethodRef(mr) => mr.clone(),
+                    ConstantInfo::InterfaceMethodRef(imr) => MethodRefConstant {
+                        class_index: imr.class_index,
+                        name_and_type_index: imr.name_and_type_index,
+                    },
                     x => panic!("bad method ref: {:?}", x),
+                };
+                log(&format!("MR = {:?}", mr));
+                let stack_frame =
+                    self.create_stack_frame(jvm, &mut state, InvokeType::Virtual, const_pool, &mr);
+
+                log(&format!("Virtual stack frame = {:?}", stack_frame));
+
+                {
+                    let mut csf = jvm.call_stack_frames.borrow_mut();
+                    csf.push(stack_frame);
                 }
+                self.step_until_stack_depth(jvm, depth);
+                update_stack!();
+            }
+            Instruction::Istore0 => state.lvt[0] = state.stack.pop().expect("stack underflow"),
+            Instruction::Istore1 => state.lvt[1] = state.stack.pop().expect("stack underflow"),
+            Instruction::Istore2 => state.lvt[2] = state.stack.pop().expect("stack underflow"),
+            Instruction::Istore3 => state.lvt[3] = state.stack.pop().expect("stack underflow"),
+            Instruction::Iushr => {
+                let shift_amount = match state.stack.pop().expect("stack underflow") {
+                    JavaValue::Int(val) => val & 0b11111,
+                    _ => panic!("invalid shift amount"),
+                };
+                let value_to_shift = match state.stack.pop().expect("stack underflow") {
+                    JavaValue::Int(val) => val,
+                    _ => panic!("invalid value"),
+                };
+                state.stack.push(JavaValue::Int(
+                    (value_to_shift as u32 >> shift_amount) as i32,
+                ));
+            }
+            Instruction::Ixor => {
+                let rhs = match state.stack.pop().expect("stack underflow") {
+                    JavaValue::Int(val) => val & 0b11111,
+                    _ => panic!("invalid value"),
+                };
+                let lhs = match state.stack.pop().expect("stack underflow") {
+                    JavaValue::Int(val) => val,
+                    _ => panic!("invalid value"),
+                };
+                state.stack.push(JavaValue::Int(lhs ^ rhs));
             }
             Instruction::Ldc(constant_id) => {
                 let const_pool = use_const_pool!();
-                let value = match &const_pool[*constant_id as usize - 1] {
-                    ConstantInfo::Integer(ic) => JavaValue::Int(ic.value),
-                    ConstantInfo::String(sc) => match &const_pool[sc.string_index as usize - 1] {
-                        ConstantInfo::Utf8(inner) => {
-                            let str = inner.utf8_string.clone();
-                            let obj = jvm.create_string_object(str.as_str());
-                            JavaValue::Object(Some(obj))
-                        }
-                        x => panic!("bad string constant definition: {:?}", x),
-                    },
-                    ConstantInfo::Class(cc) => {
-                        let class_name = get_constant_string(&const_pool, cc.name_index);
-
-                        let heap = jvm.heap.borrow();
-                        let class_id = *heap
-                            .loaded_classes_lookup
-                            .get(class_name)
-                            .expect("NoClassDefError");
-                        let class_object_id = heap.loaded_classes[class_id].class_object_id;
-
-                        JavaValue::Object(Some(class_object_id))
-                    }
-                    x => panic!("bad constant: {:?}", x),
-                };
-                state.stack.push(value);
+                self.push_constant(jvm, &mut state, const_pool, *constant_id as usize);
+            }
+            Instruction::LdcW(constant_id) => {
+                let const_pool = use_const_pool!();
+                self.push_constant(jvm, &mut state, const_pool, *constant_id as usize);
             }
             Instruction::Monitorenter => {
                 // TODO
@@ -850,6 +983,7 @@ impl InstructionExecutor {
                 csf.pop().unwrap();
                 return;
             }
+            Instruction::Sipush(val) => state.stack.push(JavaValue::Int(*val as i32)),
             x => panic!("unhandled instruction: {:?}", x),
         }
 
