@@ -55,6 +55,7 @@ dependencies = [
  "bitflags",
  "cesu8",
  "nom",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -275,6 +276,7 @@ version = "0.1.0"
 dependencies = [
  "classfile-parser",
  "console_error_panic_hook",
+ "js-sys",
  "wasm-bindgen",
  "web-sys",
  "zip",

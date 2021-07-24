@@ -7,21 +7,29 @@
 
         import init, { WebJvmRuntime } from './pkg/webjvm.js';
 
+        function Java_java_lang_System_registerNatives() {
+            console.error('Yo, we just called a native function!');
+        }
+
         async function run() {
             await init();
             console.log('Called init, downloading content....');
         
             const stdlib = await fetch('./java/skinny-stdlib.jar');
+            const webjvm = await fetch('./java/webjvm-stdlib.jar');
             const cls = await fetch('./java/MainTest.class');
 
             const stdlibBuffer = await stdlib.arrayBuffer();
+            const webjvmBuffer = await webjvm.arrayBuffer();
             const classBuffer = await cls.arrayBuffer();
 
             console.log('Downloaded content, adding to VM classpath...');
 
             const jvm = new WebJvmRuntime();
             jvm.addClasspathJar(new Uint8Array(stdlibBuffer));
+            jvm.addClasspathJar(new Uint8Array(webjvmBuffer));
             jvm.addClasspathEntry(new Uint8Array(classBuffer));
+            // jvm.addNativeMethod(Java_java_lang_System_registerNatives);
 
             console.log('Executing JVM...');
             jvm.executeMain();

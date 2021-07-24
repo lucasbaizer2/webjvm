@@ -1,2 +1,4 @@
 /target
 /test/java/skinny-stdlib.jar
+/test/java/webjvm-stdlib.jar
+/java/build
