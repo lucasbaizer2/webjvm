@@ -18,14 +18,16 @@ impl InstructionExecutor {
         }
     }
 
-    pub fn step_until_stack_depth(&self, jvm: &Jvm, depth: usize) {
+    pub fn step_until_stack_depth(&self, jvm: &Jvm, depth: usize) -> RuntimeResult<()> {
         while {
             let csf = jvm.call_stack_frames.borrow();
             csf.len()
         } > depth
         {
-            self.step(jvm);
+            self.step(jvm)?;
         }
+
+        Ok(())
     }
 
     fn create_stack_frame(
@@ -35,9 +37,9 @@ impl InstructionExecutor {
         invoke_type: InvokeType,
         const_pool: &Vec<ConstantInfo>,
         mr: &MethodRefConstant,
-    ) -> CallStackFrame {
+    ) -> RuntimeResult<CallStackFrame> {
         let class_str = get_constant_string(const_pool, mr.class_index);
-        jvm.ensure_class_loaded(class_str, true);
+        jvm.ensure_class_loaded(class_str, true)?;
 
         let method_str = get_constant_name_and_type(const_pool, mr.name_and_type_index);
         let parsed_descriptor = MethodDescriptor::new(method_str.1).expect("bad method descriptor");
@@ -55,12 +57,10 @@ impl InstructionExecutor {
             _ => args_len + 1,
         });
 
-        log(&format!("{:?} and args_len={}", state.stack, args_len));
         for _ in 0..args_len {
             let val = state.stack.pop().expect("stack underflow");
             args.push_exact(val);
         }
-        log(&format!("args={:?}", args));
 
         let instance_id = match invoke_type {
             InvokeType::Static => None,
@@ -68,7 +68,7 @@ impl InstructionExecutor {
                 let object_instance = state.stack.pop().expect("stack underflow");
                 let instance_id = match object_instance {
                     JavaValue::Object(instance_id) => match instance_id {
-                        None => jvm.throw_npe(),
+                        None => return Err(jvm.throw_npe()),
                         Some(inner_id) => inner_id,
                     },
                     _ => panic!("bad object ref"),
@@ -92,31 +92,38 @@ impl InstructionExecutor {
             }
             _ => class_str.clone(),
         };
-        let declaring_class = jvm
+        let declaring_class = match jvm
             .classpath
             .get_classpath_entry(declaring_class_name.as_str())
-            .unwrap_or_else(|| {
-                jvm.throw_exception("java/lang/NoClassDefError", Some(&declaring_class_name))
-            });
-        let (method_class, method) = jvm
-            .classpath
-            .get_method(invoke_type, declaring_class, method_str.0, method_str.1)
-            .unwrap_or_else(|| {
-                jvm.throw_exception(
-                    "java/lang/NoSuchMethodError",
-                    Some(&format!(
-                        "{}.{}{}",
-                        declaring_class_name, method_str.0, method_str.1
-                    )),
-                )
-            });
-
-        let mut frame = jvm.create_stack_frame(method_class, method);
-        log(&format!("{:?}: {:?}", method_str, args));
+        {
+            Some(file) => file,
+            None => {
+                return Err(
+                    jvm.throw_exception("java/lang/NoClassDefError", Some(&declaring_class_name))
+                );
+            }
+        };
+        let (method_class, method) =
+            match jvm
+                .classpath
+                .get_method(invoke_type, declaring_class, method_str.0, method_str.1)
+            {
+                Some(method) => method,
+                None => {
+                    return Err(jvm.throw_exception(
+                        "java/lang/NoSuchMethodError",
+                        Some(&format!(
+                            "{}.{}{}",
+                            declaring_class_name, method_str.0, method_str.1
+                        )),
+                    ));
+                }
+            };
+        let mut frame = jvm.create_stack_frame(method_class, method)?;
         for i in 0..args.len() {
             frame.state.lvt[i] = args.remove(0);
         }
-        frame
+        Ok(frame)
     }
 
     fn get_native_step_env<'a>(&self, jvm: &'a Jvm, frame: &CallStackFrame) -> JniEnv<'a> {
@@ -142,7 +149,7 @@ impl InstructionExecutor {
         state: &mut CallStackFrameState,
         const_pool: &Vec<ConstantInfo>,
         constant_id: usize,
-    ) {
+    ) -> RuntimeResult<()> {
         let value = match &const_pool[constant_id - 1] {
             ConstantInfo::Integer(ic) => JavaValue::Int(ic.value),
             ConstantInfo::Long(lc) => JavaValue::Long(lc.value),
@@ -158,16 +165,10 @@ impl InstructionExecutor {
             },
             ConstantInfo::Class(cc) => {
                 let class_name = get_constant_string(&const_pool, cc.name_index);
-                jvm.ensure_class_loaded(class_name, true);
+                jvm.ensure_class_loaded(class_name, true)?;
 
                 let heap = jvm.heap.borrow();
-                let class_id = *heap
-                    .loaded_classes_lookup
-                    .get(class_name)
-                    // .expect(&format!("NoClassDefError: {}", class_name));
-                    .unwrap_or_else(|| {
-                        jvm.throw_exception("java/lang/NoClassDefError", Some(class_name))
-                    });
+                let class_id = *heap.loaded_classes_lookup.get(class_name).unwrap();
                 let class_object_id = heap.loaded_classes[class_id].class_object_id;
 
                 JavaValue::Object(Some(class_object_id))
@@ -175,10 +176,17 @@ impl InstructionExecutor {
             x => panic!("bad constant: {:?}", x),
         };
         state.stack.push(value);
+
+        Ok(())
     }
 
-    fn is_instance_of(&self, jvm: &Jvm, val: &JavaValue, compare_type: &str) -> bool {
-        match val {
+    fn is_instance_of(
+        &self,
+        jvm: &Jvm,
+        val: &JavaValue,
+        compare_type: &str,
+    ) -> RuntimeResult<bool> {
+        let res = match val {
             JavaValue::Object(instance) => match instance {
                 Some(instance_id) => {
                     let heap = jvm.heap.borrow();
@@ -197,15 +205,16 @@ impl InstructionExecutor {
                             }
                         }
 
-                        let cls = jvm
-                            .classpath
-                            .get_classpath_entry(&current_class.java_type)
-                            .unwrap_or_else(|| {
-                                jvm.throw_exception(
+                        let cls = match jvm.classpath.get_classpath_entry(&current_class.java_type)
+                        {
+                            Some(file) => file,
+                            None => {
+                                return Err(jvm.throw_exception(
                                     "java/lang/NoClassDefError",
                                     Some(&current_class.java_type),
-                                )
-                            });
+                                ))
+                            }
+                        };
                         if cls.super_class == 0 {
                             break 'l false;
                         }
@@ -224,12 +233,13 @@ impl InstructionExecutor {
                 true
             }
             _ => panic!("invalid object"),
-        }
+        };
+        Ok(res)
     }
 
-    pub fn step(&self, jvm: &Jvm) {
+    pub fn step(&self, jvm: &Jvm) -> RuntimeResult<()> {
         let ic = { self.instruction_count.borrow().clone() };
-        if ic == 18000 {
+        if ic == 31000 {
             unsafe { util::PERMIT_LOGGING = true }
         }
         log(&format!("Instruction counter: {}", ic));
@@ -262,13 +272,16 @@ impl InstructionExecutor {
                         (env, jni_name)
                     };
 
-                    let method = jvm
-                        .classpath
-                        .get_native_method(&jni_name)
-                        .unwrap_or_else(|| {
-                            jvm.throw_exception("java/lang/UnsatisfiedLinkError", Some(&jni_name))
-                        });
-                    method.invoke(&env)
+                    let method = match jvm.classpath.get_native_method(&jni_name) {
+                        Some(method) => method,
+                        None => {
+                            return Err(jvm.throw_exception(
+                                "java/lang/UnsatisfiedLinkError",
+                                Some(&jni_name),
+                            ))
+                        }
+                    };
+                    method.invoke(&env)?
                 };
 
                 let mut csf = jvm.call_stack_frames.borrow_mut();
@@ -278,7 +291,7 @@ impl InstructionExecutor {
                     .state
                     .return_stack_value = return_value;
 
-                return;
+                return Ok(());
             } else {
                 let csf = jvm.call_stack_frames.borrow();
                 let depth = csf.len();
@@ -393,14 +406,8 @@ impl InstructionExecutor {
 
         match &insn.1 {
             Instruction::Aaload | Instruction::Caload | Instruction::Iaload => {
-                let index = match pop!() {
-                    JavaValue::Int(i) => i,
-                    _ => panic!("invalid array index"),
-                };
-                let arrayref_id = match pop!() {
-                    JavaValue::Array(id) => id,
-                    _ => panic!("invalid array instance ID"),
-                };
+                let index = pop!().as_int().expect("invalid array index");
+                let arrayref_id = pop!().as_array().expect("invalid array instance ID");
 
                 let heap = jvm.heap.borrow();
                 let arrayref = heap
@@ -409,10 +416,10 @@ impl InstructionExecutor {
                     .expect("invalid array instance ID");
 
                 if index >= arrayref.values.len() as i32 || index < 0 {
-                    jvm.throw_exception(
+                    return Err(jvm.throw_exception(
                         "java/lang/ArrayIndexOutOfBoundsException",
                         Some(index.to_string().as_str()),
-                    );
+                    ));
                 } else {
                     let val = arrayref.values[index as usize].clone();
                     state.stack.push(val);
@@ -420,14 +427,8 @@ impl InstructionExecutor {
             }
             Instruction::Aastore | Instruction::Castore | Instruction::Iastore => {
                 let value = pop!();
-                let index = match pop!() {
-                    JavaValue::Int(i) => i,
-                    _ => panic!("invalid array index"),
-                };
-                let arrayref_id = match pop!() {
-                    JavaValue::Array(id) => id,
-                    _ => panic!("invalid array instance ID"),
-                };
+                let index = pop!().as_int().expect("invalid array index");
+                let arrayref_id = pop!().as_array().expect("invalid array instance ID");
 
                 let mut heap = jvm.heap.borrow_mut();
                 let arrayref = heap
@@ -435,10 +436,10 @@ impl InstructionExecutor {
                     .get_mut(&arrayref_id)
                     .expect("invalid array instance ID");
                 if index >= arrayref.values.len() as i32 || index < 0 {
-                    jvm.throw_exception(
+                    return Err(jvm.throw_exception(
                         "java/lang/ArrayIndexOutOfBoundsException",
                         Some(index.to_string().as_str()),
-                    );
+                    ));
                 } else {
                     arrayref.values[index as usize] = value;
                 }
@@ -459,7 +460,7 @@ impl InstructionExecutor {
             Instruction::Anewarray(type_ref_id) => {
                 let const_pool = use_const_pool!();
                 let type_str = get_constant_string(const_pool, *type_ref_id);
-                let type_id = jvm.ensure_class_loaded(type_str, true);
+                let type_id = jvm.ensure_class_loaded(type_str, true)?;
 
                 let length = state
                     .stack
@@ -486,7 +487,7 @@ impl InstructionExecutor {
                     .state
                     .return_stack_value = Some(return_value);
 
-                return;
+                return Ok(());
             }
             Instruction::Arraylength => {
                 let arrayref_id = match pop!() {
@@ -510,8 +511,10 @@ impl InstructionExecutor {
                     let const_pool = use_const_pool!();
                     let compare_type = get_constant_string(&const_pool, *compare_type_id);
 
-                    if !self.is_instance_of(jvm, &test, compare_type) {
-                        jvm.throw_exception("java/lang/ClassCastException", Some(compare_type));
+                    if !self.is_instance_of(jvm, &test, compare_type)? {
+                        return Err(
+                            jvm.throw_exception("java/lang/ClassCastException", Some(compare_type))
+                        );
                     }
                 }
             }
@@ -589,7 +592,10 @@ impl InstructionExecutor {
                             get_constant_name_and_type(const_pool, fr.name_and_type_index);
 
                         let instance_id = match pop!() {
-                            JavaValue::Object(id) => id.unwrap_or_else(|| jvm.throw_npe()),
+                            JavaValue::Object(id) => match id {
+                                Some(val) => val,
+                                None => return Err(jvm.throw_npe()),
+                            },
                             _ => panic!("invalid object reference"),
                         };
 
@@ -599,9 +605,7 @@ impl InstructionExecutor {
                             .get(&instance_id)
                             .expect("invalid object reference");
 
-                        log(&format!("Getting: {:?} FIELD {}", instance, field_str.0));
-
-                        let value = instance.get_field(jvm, field_str.0).clone();
+                        let value = instance.get_field(jvm, field_str.0)?.clone();
                         state.stack.push(value);
                     }
                     x => panic!("bad field ref: {:?}", x),
@@ -612,7 +616,7 @@ impl InstructionExecutor {
                 match &const_pool[*field_ref_id as usize - 1] {
                     ConstantInfo::FieldRef(fr) => {
                         let class_str = get_constant_string(const_pool, fr.class_index);
-                        let class_id = jvm.ensure_class_loaded(class_str, true);
+                        let class_id = jvm.ensure_class_loaded(class_str, true)?;
 
                         let field_str =
                             get_constant_name_and_type(const_pool, fr.name_and_type_index);
@@ -623,22 +627,16 @@ impl InstructionExecutor {
                     x => panic!("bad field ref: {:?}", x),
                 }
             }
+            Instruction::I2c => {
+                let int = pop!().as_int().expect("expecting integral value");
+                state.stack.push(JavaValue::Char(int as u16));
+            }
             Instruction::I2f => {
-                let int = state
-                    .stack
-                    .pop()
-                    .expect("stack underflow")
-                    .as_int()
-                    .expect("expecting integral value");
+                let int = pop!().as_int().expect("expecting integral value");
                 state.stack.push(JavaValue::Float(int as f32));
             }
             Instruction::I2l => {
-                let int = state
-                    .stack
-                    .pop()
-                    .expect("stack underflow")
-                    .as_int()
-                    .expect("expecting float value");
+                let int = pop!().as_int().expect("expecting integral value");
                 state.stack.push(JavaValue::Long(int as i64));
             }
             Instruction::Iconst0 => state.stack.push(JavaValue::Int(0)),
@@ -741,7 +739,7 @@ impl InstructionExecutor {
             Instruction::Instanceof(compare_type_id) => {
                 let const_pool = use_const_pool!();
                 let compare_type = get_constant_string(&const_pool, *compare_type_id);
-                let res = self.is_instance_of(jvm, &pop!(), compare_type);
+                let res = self.is_instance_of(jvm, &pop!(), compare_type)?;
                 state.stack.push(JavaValue::Boolean(res));
             }
             Instruction::Invokespecial(method_ref_id) => {
@@ -755,7 +753,7 @@ impl InstructionExecutor {
                             InvokeType::Special,
                             const_pool,
                             mr,
-                        );
+                        )?;
 
                         log(&format!("Special stack frame = {:?}", stack_frame));
 
@@ -763,7 +761,7 @@ impl InstructionExecutor {
                             let mut csf = jvm.call_stack_frames.borrow_mut();
                             csf.push(stack_frame);
                         }
-                        self.step_until_stack_depth(jvm, depth);
+                        self.step_until_stack_depth(jvm, depth)?;
                         update_stack!();
                     }
                     x => panic!("bad method ref: {:?}", x),
@@ -779,14 +777,14 @@ impl InstructionExecutor {
                             InvokeType::Static,
                             const_pool,
                             mr,
-                        );
+                        )?;
                         log(&format!("Static stack frame = {:?}", stack_frame));
 
                         {
                             let mut csf = jvm.call_stack_frames.borrow_mut();
                             csf.push(stack_frame);
                         }
-                        self.step_until_stack_depth(jvm, depth);
+                        self.step_until_stack_depth(jvm, depth)?;
                         update_stack!();
                     }
                     x => panic!("bad method ref: {:?}", x),
@@ -802,9 +800,8 @@ impl InstructionExecutor {
                     },
                     x => panic!("bad method ref: {:?}", x),
                 };
-                log(&format!("MR = {:?}", mr));
                 let stack_frame =
-                    self.create_stack_frame(jvm, &mut state, InvokeType::Virtual, const_pool, &mr);
+                    self.create_stack_frame(jvm, &mut state, InvokeType::Virtual, const_pool, &mr)?;
 
                 log(&format!("Virtual stack frame = {:?}", stack_frame));
 
@@ -812,7 +809,7 @@ impl InstructionExecutor {
                     let mut csf = jvm.call_stack_frames.borrow_mut();
                     csf.push(stack_frame);
                 }
-                self.step_until_stack_depth(jvm, depth);
+                self.step_until_stack_depth(jvm, depth)?;
                 update_stack!();
             }
             Instruction::Ishl => {
@@ -894,11 +891,26 @@ impl InstructionExecutor {
             }
             Instruction::Ldc(constant_id) => {
                 let const_pool = use_const_pool!();
-                self.push_constant(jvm, &mut state, const_pool, *constant_id as usize);
+                self.push_constant(jvm, &mut state, const_pool, *constant_id as usize)?;
             }
             Instruction::LdcW(constant_id) | Instruction::Ldc2W(constant_id) => {
                 let const_pool = use_const_pool!();
-                self.push_constant(jvm, &mut state, const_pool, *constant_id as usize);
+                self.push_constant(jvm, &mut state, const_pool, *constant_id as usize)?;
+            }
+            Instruction::Lookupswitch { default, pairs } => {
+                let key = pop!().as_int().expect("expecting integral value");
+                let branched = 'b: {
+                    for pair in pairs {
+                        if key == pair.0 {
+                            branch_to!(pair.1);
+                            break 'b true;
+                        }
+                    }
+                    false
+                };
+                if !branched {
+                    branch_to!(*default);
+                }
             }
             Instruction::Monitorenter => {
                 // TODO
@@ -912,7 +924,7 @@ impl InstructionExecutor {
                 let const_pool = use_const_pool!();
                 let type_str = get_constant_string(const_pool, *type_ref_id);
 
-                let instance = jvm.new_instance(type_str);
+                let instance = jvm.new_instance(type_str)?;
                 let instance_id = jvm.heap_store_instance(instance);
 
                 state.stack.push(JavaValue::Object(Some(instance_id)))
@@ -957,7 +969,10 @@ impl InstructionExecutor {
 
                         let value = pop_full!();
                         let instance_id = match pop!() {
-                            JavaValue::Object(id) => id.unwrap_or_else(|| jvm.throw_npe()),
+                            JavaValue::Object(id) => match id {
+                                Some(val) => val,
+                                None => return Err(jvm.throw_npe()),
+                            },
                             _ => panic!("invalid object reference"),
                         };
 
@@ -968,7 +983,7 @@ impl InstructionExecutor {
                             .expect("invalid object reference");
                         log(&format!("Instance = {:?}", instance));
 
-                        instance.set_field(jvm, field_str.0, value);
+                        instance.set_field(jvm, field_str.0, value)?;
                     }
                     x => panic!("bad field ref: {:?}", x),
                 }
@@ -978,7 +993,7 @@ impl InstructionExecutor {
                 match &const_pool[*field_ref_id as usize - 1] {
                     ConstantInfo::FieldRef(fr) => {
                         let class_str = get_constant_string(const_pool, fr.class_index);
-                        let class_id = jvm.ensure_class_loaded(class_str, true);
+                        let class_id = jvm.ensure_class_loaded(class_str, true)?;
 
                         let field_str =
                             get_constant_name_and_type(const_pool, fr.name_and_type_index);
@@ -992,13 +1007,15 @@ impl InstructionExecutor {
             Instruction::Return => {
                 let mut csf = jvm.call_stack_frames.borrow_mut();
                 csf.pop().unwrap();
-                return;
+                return Ok(());
             }
             Instruction::Sipush(val) => state.stack.push(JavaValue::Int(*val as i32)),
-            x => jvm.throw_exception(
-                "webjvm/lang/UnhandledInstructionError",
-                Some(&format!("{:?}", x)),
-            ),
+            x => {
+                return Err(jvm.throw_exception(
+                    "webjvm/lang/UnhandledInstructionError",
+                    Some(&format!("{:?}", x)),
+                ))
+            }
         }
 
         // if the offset was not changed by an instruction
@@ -1016,5 +1033,7 @@ impl InstructionExecutor {
         }
         let mut csf = jvm.call_stack_frames.borrow_mut();
         csf.last_mut().unwrap().state = state;
+
+        Ok(())
     }
 }

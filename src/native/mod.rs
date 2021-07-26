@@ -1,12 +1,12 @@
-use crate::{model::JavaValue, Classpath, JniEnv, NativeMethod};
+use crate::{Classpath, JniEnv, NativeMethod, model::{JavaValue, RuntimeResult}};
 
 pub struct RustMethod {
     pub name: String,
-    pub handler: Box<dyn Fn(&JniEnv) -> Option<JavaValue>>,
+    pub handler: Box<dyn Fn(&JniEnv) -> RuntimeResult<Option<JavaValue>>>,
 }
 
 impl NativeMethod for RustMethod {
-    fn invoke(&self, env: &JniEnv) -> Option<JavaValue> {
+    fn invoke(&self, env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
         (self.handler)(env)
     }
 
@@ -44,6 +44,10 @@ pub mod java_lang_Thread;
 
 #[allow(non_snake_case)]
 pub mod java_io_FileInputStream;
+#[allow(non_snake_case)]
+pub mod java_io_FileOutputStream;
+#[allow(non_snake_case)]
+pub mod java_io_FileDescriptor;
 
 #[allow(non_snake_case)]
 pub mod java_security_AccessController;
@@ -66,6 +70,8 @@ pub fn initialize(cp: &mut Classpath) {
     java_lang_Thread::initialize(cp);
 
     java_io_FileInputStream::initialize(cp);
+    java_io_FileOutputStream::initialize(cp);
+    java_io_FileDescriptor::initialize(cp);
     
     java_security_AccessController::initialize(cp);
 

@@ -1,23 +1,27 @@
 use std::mem::size_of;
 
-use crate::{model::JavaValue, util::log, Classpath, InvokeType, JniEnv};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    util::log,
+    Classpath, InvokeType, JniEnv,
+};
 
 const ADDRESS_SIZE: i32 = size_of::<usize>() as i32;
 
 #[allow(non_snake_case)]
-fn Java_sun_misc_Unsafe_registerNatives(_: &JniEnv) -> Option<JavaValue> {
+fn Java_sun_misc_Unsafe_registerNatives(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     log("Registered Unsafe natives!");
 
-    None
+    Ok(None)
 }
 
 #[allow(non_snake_case)]
-fn Java_sun_misc_Unsafe_arrayBaseOffset(_: &JniEnv) -> Option<JavaValue> {
-    Some(JavaValue::Long(0))
+fn Java_sun_misc_Unsafe_arrayBaseOffset(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    Ok(Some(JavaValue::Long(0)))
 }
 
 #[allow(non_snake_case)]
-fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> Option<JavaValue> {
+fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     let array_class = &env.parameters[1].as_object().unwrap().unwrap();
     let scale = match env
         .invoke_instance_method(
@@ -27,7 +31,7 @@ fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> Option<JavaValue> {
             "getComponentType",
             "()Ljava/lang/Class;",
             &[],
-        )
+        )?
         .unwrap()
     {
         JavaValue::Object(obj) => match obj {
@@ -46,20 +50,22 @@ fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> Option<JavaValue> {
                 "boolean" => 1,
                 _ => ADDRESS_SIZE,
             },
-            None => env.throw_exception(
-                "java/lang/InvalidClassCastException",
-                Some("expecting array type"),
-            ),
+            None => {
+                return Err(env.throw_exception(
+                    "java/lang/InvalidClassCastException",
+                    Some("expecting array type"),
+                ))
+            }
         },
         _ => panic!(),
     };
 
-    Some(JavaValue::Int(scale))
+    Ok(Some(JavaValue::Int(scale)))
 }
 
 #[allow(non_snake_case)]
-fn Java_sun_misc_Unsafe_addressSize(_: &JniEnv) -> Option<JavaValue> {
-    Some(JavaValue::Int(ADDRESS_SIZE))
+fn Java_sun_misc_Unsafe_addressSize(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    Ok(Some(JavaValue::Int(ADDRESS_SIZE)))
 }
 
 pub fn initialize(cp: &mut Classpath) {

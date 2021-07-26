@@ -1,3 +1,5 @@
+#![feature(label_break_value)]
+
 pub mod exec;
 pub mod java;
 pub mod model;
@@ -22,24 +24,24 @@ pub struct StackTraceElement {
 }
 
 impl NativeMethod for js_sys::Function {
-    fn invoke(&self, env: &JniEnv) -> Option<JavaValue> {
+    fn invoke(&self, env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
         let res = self
             .call0(&JsValue::null())
             .expect("error invoking JavaScript function");
         if res.is_string() {
             let str: String = res.as_string().unwrap();
-            return Some(JavaValue::Object(Some(env.new_string(&str))));
+            return Ok(Some(JavaValue::Object(Some(env.new_string(&str)))));
         } else if res.is_null() {
-            return Some(JavaValue::Object(None));
+            return Ok(Some(JavaValue::Object(None)));
         } else if let Some(double) = res.as_f64() {
-            return Some(JavaValue::Double(double));
+            return Ok(Some(JavaValue::Double(double)));
         } else if let Some(bool) = res.as_bool() {
-            return Some(JavaValue::Boolean(bool));
+            return Ok(Some(JavaValue::Boolean(bool)));
         } else if !res.is_undefined() {
             panic!("Invalid returned value from native JavaScript method");
         }
 
-        None
+        Ok(None)
     }
 
     fn get_name(&self) -> String {
@@ -48,7 +50,7 @@ impl NativeMethod for js_sys::Function {
 }
 
 pub trait NativeMethod {
-    fn invoke(&self, env: &JniEnv) -> Option<JavaValue>;
+    fn invoke(&self, env: &JniEnv) -> RuntimeResult<Option<JavaValue>>;
 
     fn get_name(&self) -> String;
 }
@@ -310,7 +312,7 @@ impl WebJvmRuntime {
 
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = getStacktrace)]
     pub fn get_stacktrace(&self) {
-        self.jvm.throw_npe()
+        self.jvm.throw_npe();
     }
 
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = executeMain)]
@@ -326,11 +328,16 @@ impl WebJvmRuntime {
                 get_constant_string(&main_class.const_pool, main_class.this_class)
             ));
 
-            self.jvm.create_stack_frame(main_class, main_method)
+            self.jvm
+                .create_stack_frame(main_class, main_method)
+                .unwrap()
         };
         exec::env::initialize(&self.jvm);
         self.jvm.push_call_stack_frame(frame);
-        self.jvm.executor.step_until_stack_depth(&self.jvm, 1);
+        self.jvm
+            .executor
+            .step_until_stack_depth(&self.jvm, 1)
+            .unwrap();
 
         Ok(())
     }

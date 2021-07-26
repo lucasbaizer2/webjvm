@@ -1,12 +1,17 @@
-use crate::{model::JavaValue, Classpath, InvokeType, JniEnv};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    Classpath, InvokeType, JniEnv,
+};
 
 #[allow(non_snake_case)]
-fn Java_java_security_AccessController_doPrivileged(env: &JniEnv) -> Option<JavaValue> {
-    let action = env.parameters[0]
-        .as_object()
-        .unwrap()
-        .unwrap_or_else(|| env.throw_exception("java/lang/NullPointerException", None));
-    Some(
+fn Java_java_security_AccessController_doPrivileged(
+    env: &JniEnv,
+) -> RuntimeResult<Option<JavaValue>> {
+    let action = match env.parameters[0].as_object().unwrap() {
+        Some(id) => id,
+        None => return Err(env.throw_exception("java/lang/NullPointerException", None)),
+    };
+    Ok(Some(
         env.invoke_instance_method(
             InvokeType::Virtual,
             action,
@@ -14,16 +19,16 @@ fn Java_java_security_AccessController_doPrivileged(env: &JniEnv) -> Option<Java
             "run",
             "()Ljava/lang/Object;",
             &[],
-        )
+        )?
         .unwrap(),
-    )
+    ))
 }
 
 #[allow(non_snake_case)]
 fn Java_java_security_AccessController_getStackAccessControlContext(
     _: &JniEnv,
-) -> Option<JavaValue> {
-    Some(JavaValue::Object(None))
+) -> RuntimeResult<Option<JavaValue>> {
+    Ok(Some(JavaValue::Object(None)))
 }
 
 pub fn initialize(cp: &mut Classpath) {

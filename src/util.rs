@@ -10,6 +10,14 @@ pub fn log(str: &str) {
     }
 }
 
+pub fn log_error(str: &str) {
+    unsafe {
+        if PERMIT_LOGGING {
+            web_sys::console::error_1(&str.into());
+        }
+    }
+}
+
 pub fn get_constant_string(const_pool: &Vec<ConstantInfo>, constant_index: u16) -> &String {
     match &const_pool[constant_index as usize - 1] {
         ConstantInfo::Utf8(str) => &str.utf8_string,

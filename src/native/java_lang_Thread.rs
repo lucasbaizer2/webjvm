@@ -1,33 +1,36 @@
-use crate::{model::JavaValue, Classpath, JniEnv};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    Classpath, JniEnv,
+};
 
 #[allow(non_snake_case)]
-fn Java_java_lang_Thread_registerNatives(_: &JniEnv) -> Option<JavaValue> {
-    None
+fn Java_java_lang_Thread_registerNatives(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    Ok(None)
 }
 
 #[allow(non_snake_case)]
-fn Java_java_lang_Thread_currentThread(env: &JniEnv) -> Option<JavaValue> {
-    Some(JavaValue::Object(Some(env.get_main_thread())))
+fn Java_java_lang_Thread_currentThread(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    Ok(Some(JavaValue::Object(Some(env.get_main_thread()))))
 }
 
 #[allow(non_snake_case)]
-fn Java_java_lang_Thread_setPriority0(_: &JniEnv) -> Option<JavaValue> {
-    None
+fn Java_java_lang_Thread_setPriority0(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    Ok(None)
 }
 
 #[allow(non_snake_case)]
-fn Java_java_lang_Thread_isAlive(env: &JniEnv) -> Option<JavaValue> {
+fn Java_java_lang_Thread_isAlive(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     if let Some(is_alive) = env.get_internal_metadata(env.get_current_instance(), "is_alive") {
-        Some(JavaValue::Boolean(is_alive == "true"))
+        Ok(Some(JavaValue::Boolean(is_alive == "true")))
     } else {
-        Some(JavaValue::Boolean(false))
+        Ok(Some(JavaValue::Boolean(false)))
     }
 }
 
 #[allow(non_snake_case)]
-fn Java_java_lang_Thread_start0(env: &JniEnv) -> Option<JavaValue> {
+fn Java_java_lang_Thread_start0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     env.set_internal_metadata(env.get_current_instance(), "is_alive", "true");
-    None
+    Ok(None)
 }
 
 pub fn initialize(cp: &mut Classpath) {

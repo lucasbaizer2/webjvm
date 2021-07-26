@@ -77,6 +77,13 @@ impl JavaValue {
         }
     }
 
+    pub fn as_array(&self) -> Result<usize, ()> {
+        match self {
+            JavaValue::Array(x) => Ok(*x),
+            _ => Err(()),
+        }
+    }
+
     pub fn as_object(&self) -> Result<Option<usize>, ()> {
         match self {
             JavaValue::Object(x) => Ok(*x),
@@ -131,18 +138,20 @@ pub struct JavaObject {
 }
 
 impl JavaObject {
-    pub fn set_field(&mut self, jvm: &Jvm, name: &str, val: JavaValue) {
+    pub fn set_field(&mut self, jvm: &Jvm, name: &str, val: JavaValue) -> RuntimeResult<()> {
         if !self.instance_fields.contains_key(name) {
-            jvm.throw_exception("java/lang/NoSuchFieldError", Some(name));
+            Err(jvm.throw_exception("java/lang/NoSuchFieldError", Some(name)))
         } else {
             self.instance_fields.insert(String::from(name), val);
+            Ok(())
         }
     }
 
-    pub fn get_field(&self, jvm: &Jvm, name: &str) -> &JavaValue {
-        self.instance_fields
-            .get(name)
-            .unwrap_or_else(|| jvm.throw_exception("java/lang/NoSuchFieldError", Some(name)))
+    pub fn get_field(&self, jvm: &Jvm, name: &str) -> RuntimeResult<&JavaValue> {
+        match self.instance_fields.get(name) {
+            Some(val) => Ok(val),
+            None => Err(jvm.throw_exception("java/lang/NoSuchFieldError", Some(name))),
+        }
     }
 
     pub fn get_internal_metadata(&self, name: &str) -> Option<&String> {
@@ -338,4 +347,12 @@ pub struct Heap {
     pub array_heap_map: HashMap<usize, JavaArray>,
     pub object_id_offset: usize,
     pub main_thread_object: usize,
+}
+
+pub type RuntimeResult<T> = std::result::Result<T, JavaThrowable>;
+
+#[derive(Debug)]
+pub enum JavaThrowable {
+    Handled,
+    Unhandled,
 }
