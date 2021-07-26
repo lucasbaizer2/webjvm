@@ -5,7 +5,7 @@
     <script type="module">
         console.log('Importing modules...');
 
-        import init, { WebJvmRuntime } from './pkg/webjvm.js';
+        import init, { WebJvmClasspath, WebJvmRuntime } from './pkg/webjvm.js';
 
         function Java_java_lang_System_registerNatives() {
             console.error('Yo, we just called a native function!');
@@ -25,13 +25,14 @@
 
             console.log('Downloaded content, adding to VM classpath...');
 
-            const jvm = new WebJvmRuntime();
-            jvm.addClasspathJar(new Uint8Array(stdlibBuffer));
-            jvm.addClasspathJar(new Uint8Array(webjvmBuffer));
-            jvm.addClasspathEntry(new Uint8Array(classBuffer));
+            const cp = new WebJvmClasspath();
+            cp.addClasspathJar(new Uint8Array(stdlibBuffer));
+            cp.addClasspathJar(new Uint8Array(webjvmBuffer));
+            cp.addClasspathEntry(new Uint8Array(classBuffer));
             // jvm.addNativeMethod(Java_java_lang_System_registerNatives);
 
             console.log('Executing JVM...');
+            const jvm = window.jvm = new WebJvmRuntime(cp);
             jvm.executeMain();
             console.log('Finished executing!');
         }

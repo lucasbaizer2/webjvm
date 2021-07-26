@@ -1,4 +1,4 @@
-use crate::{exec::JavaValue, util::log, Classpath, JniEnv};
+use crate::{model::JavaValue, util::log, Classpath, JniEnv};
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Object_registerNatives(_: &JniEnv) -> Option<JavaValue> {
@@ -9,7 +9,7 @@ fn Java_java_lang_Object_registerNatives(_: &JniEnv) -> Option<JavaValue> {
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Object_hashCode(env: &JniEnv) -> Option<JavaValue> {
-    let mut x = env.container_instance.unwrap();
+    let mut x = env.get_current_instance();
     x = ((x >> 16) ^ x) * 0x45d9f3b;
     x = ((x >> 16) ^ x) * 0x45d9f3b;
     x = (x >> 16) ^ x;
@@ -17,6 +17,9 @@ fn Java_java_lang_Object_hashCode(env: &JniEnv) -> Option<JavaValue> {
 }
 
 pub fn initialize(cp: &mut Classpath) {
-    register_jni!(cp, Java_java_lang_Object_registerNatives);
-    register_jni!(cp, Java_java_lang_Object_hashCode);
+    register_jni!(
+        cp,
+        Java_java_lang_Object_registerNatives,
+        Java_java_lang_Object_hashCode
+    );
 }

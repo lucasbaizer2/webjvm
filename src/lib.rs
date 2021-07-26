@@ -1,5 +1,6 @@
 pub mod exec;
 pub mod java;
+pub mod model;
 pub mod native;
 pub mod util;
 
@@ -10,78 +11,14 @@ use classfile_parser::{
     method_info::{MethodAccessFlags, MethodInfo},
     *,
 };
-use exec::*;
+use exec::{env::JniEnv, jvm::*};
+use model::*;
 use util::*;
 use wasm_bindgen::prelude::*;
 
-pub struct JniEnv<'a> {
-    jvm: &'a Jvm,
-    pub container_class: String,
-    pub container_instance: Option<usize>,
-    pub parameters: Vec<JavaValue>,
-}
-
-impl<'a> JniEnv<'a> {
-    pub fn empty(jvm: &'a Jvm) -> JniEnv {
-        JniEnv {
-            jvm,
-            container_class: String::new(),
-            container_instance: None,
-            parameters: Vec::new(),
-        }
-    }
-
-    pub fn new_string(&self, str: &str) -> usize {
-        self.jvm.create_string_object(str)
-    }
-
-    pub fn new_instance(&self, class: &str) -> usize {
-        let obj = self.jvm.new_instance(class);
-        self.jvm.heap_store_instance(obj)
-    }
-
-    pub fn set_field(&self, instance_id: usize, field_name: &str, value: JavaValue) {
-        let mut heap = self.jvm.heap.borrow_mut();
-        let obj = heap
-            .object_heap_map
-            .get_mut(&instance_id)
-            .expect("invalid instance ID");
-        obj.set_field(field_name, value);
-    }
-
-    pub fn invoke_instance_method(
-        &self,
-        invoke_type: InvokeType,
-        instance_id: usize,
-        declaring_class: &str,
-        method_name: &str,
-        method_descriptor: &str,
-        params: &[JavaValue],
-    ) {
-        let class = self
-            .jvm
-            .classpath
-            .get_classpath_entry(declaring_class)
-            .expect(&format!("NoClassDefError: {}", declaring_class));
-        let (method_class, method) = self
-            .jvm
-            .classpath
-            .get_method(invoke_type, class, method_name, method_descriptor)
-            .expect(&format!(
-                "NoSuchMethodError: {}.{}{}",
-                declaring_class, method_name, method_descriptor
-            ));
-
-        let mut frame = Jvm::create_stack_frame(method_class, method);
-        frame.state.lvt[0] = JavaValue::Object(Some(instance_id));
-        for i in 0..params.len() {
-            frame.state.lvt[i + 1] = params[i].clone();
-        }
-
-        let depth = self.jvm.get_stack_depth();
-        self.jvm.push_call_stack_frame(frame);
-        self.jvm.executor.step_until_stack_depth(self.jvm, depth);
-    }
+pub struct StackTraceElement {
+    pub class_name: String,
+    pub method: String,
 }
 
 impl NativeMethod for js_sys::Function {
@@ -302,22 +239,20 @@ impl Classpath {
 }
 
 #[wasm_bindgen]
-pub struct WebJvmRuntime {
+pub struct WebJvmClasspath {
     classpath: Classpath,
 }
 
 #[wasm_bindgen]
-impl WebJvmRuntime {
+impl WebJvmClasspath {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> WebJvmRuntime {
-        let mut rt = WebJvmRuntime {
+    pub fn new() -> WebJvmClasspath {
+        WebJvmClasspath {
             classpath: Classpath::new(),
-        };
-        native::initialize(&mut rt.classpath);
-        rt
+        }
     }
 
-    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = addNativeMethod)]
+    #[wasm_bindgen(method, js_class = "WebJvmClasspath", js_name = addNativeMethod)]
     pub fn add_native_method(&mut self, native_method: js_sys::Function) -> Result<(), JsValue> {
         if native_method.name() == "anonymous" {
             return Err("anonymous functions cannot be bound to the JNI".into());
@@ -327,21 +262,62 @@ impl WebJvmRuntime {
         Ok(())
     }
 
-    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = addClasspathEntry)]
+    #[wasm_bindgen(method, js_class = "WebJvmClasspath", js_name = addClasspathEntry)]
     pub fn add_classpath_entry(&mut self, class_bytes: &[u8]) {
         self.classpath.add_classpath_entry(class_bytes);
     }
 
-    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = addClasspathJar)]
+    #[wasm_bindgen(method, js_class = "WebJvmClasspath", js_name = addClasspathJar)]
     pub fn add_classpath_jar(&mut self, jar_bytes: &[u8]) {
         self.classpath.add_classpath_jar(jar_bytes);
     }
+}
+
+#[wasm_bindgen]
+pub struct WebJvmRuntime {
+    jvm: Jvm,
+}
+
+#[wasm_bindgen]
+impl WebJvmRuntime {
+    #[wasm_bindgen(constructor)]
+    pub fn new(wc: WebJvmClasspath) -> WebJvmRuntime {
+        let mut classpath = wc.classpath;
+        native::initialize(&mut classpath);
+        WebJvmRuntime {
+            jvm: Jvm::new(classpath),
+        }
+    }
+
+    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = getClassName)]
+    pub fn get_class_name(&self, id: usize) -> String {
+        let heap = self.jvm.heap.borrow();
+        heap.loaded_classes[id].java_type.clone()
+    }
+
+    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = getObject)]
+    pub fn get_object(&self, id: usize) -> String {
+        let heap = self.jvm.heap.borrow();
+        let obj = &heap.object_heap_map.get(&id).unwrap();
+        format!("{:?}", obj)
+    }
+
+    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = getString)]
+    pub fn get_string(&self, id: usize) -> String {
+        let env = JniEnv::empty(&self.jvm);
+        env.get_string(id)
+    }
+
+    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = getStacktrace)]
+    pub fn get_stacktrace(&self) {
+        self.jvm.throw_npe()
+    }
 
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = executeMain)]
-    pub fn execute_main(self) -> Result<(), JsValue> {
-        let jvm = Jvm::new(self.classpath);
+    pub fn execute_main(&self) -> Result<(), JsValue> {
         let frame = {
-            let (main_class, main_method) = jvm
+            let (main_class, main_method) = self
+                .jvm
                 .classpath
                 .get_main_method()
                 .expect("no main method found on classpath");
@@ -350,11 +326,11 @@ impl WebJvmRuntime {
                 get_constant_string(&main_class.const_pool, main_class.this_class)
             ));
 
-            Jvm::create_stack_frame(main_class, main_method)
+            self.jvm.create_stack_frame(main_class, main_method)
         };
-        jvm.executor.initialize(&jvm);
-        jvm.push_call_stack_frame(frame);
-        jvm.executor.step_until_stack_depth(&jvm, 0);
+        exec::env::initialize(&self.jvm);
+        self.jvm.push_call_stack_frame(frame);
+        self.jvm.executor.step_until_stack_depth(&self.jvm, 1);
 
         Ok(())
     }

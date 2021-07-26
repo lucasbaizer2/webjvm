@@ -1,9 +1,12 @@
 use classfile_parser::constant_info::ConstantInfo;
 
+pub static mut PERMIT_LOGGING: bool = false;
+
 pub fn log(str: &str) {
-    #[allow(unused_unsafe)]
     unsafe {
-        web_sys::console::log_1(&str.into());
+        if PERMIT_LOGGING {
+            web_sys::console::log_1(&str.into());
+        }
     }
 }
 
