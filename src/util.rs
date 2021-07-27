@@ -11,10 +11,9 @@ pub fn log(str: &str) {
 }
 
 pub fn log_error(str: &str) {
+    #[allow(unused_unsafe)]
     unsafe {
-        if PERMIT_LOGGING {
-            web_sys::console::error_1(&str.into());
-        }
+        web_sys::console::error_1(&str.into());
     }
 }
 

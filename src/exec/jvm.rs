@@ -30,6 +30,7 @@ impl Jvm {
                 loaded_classes_lookup: HashMap::new(),
                 object_heap_map: HashMap::new(),
                 array_heap_map: HashMap::new(),
+                interned_string_map: HashMap::new(),
                 object_id_offset: 0,
                 main_thread_object: 0,
             }),
@@ -300,6 +301,83 @@ impl Jvm {
         self.throw_exception("java/lang/NullPointerException", None)
     }
 
+    pub fn throw_exception_ref(&self, reference: usize) -> JavaThrowable {
+        let exception_class = {
+            let heap = self.heap.borrow();
+            let obj = &heap
+                .object_heap_map
+                .get(&reference)
+                .expect("expecting object ref");
+            let cls = &heap.loaded_classes[obj.class_id];
+            cls.java_type.clone()
+        };
+
+        return self.throw_exception(&exception_class, None);
+
+        {
+            let env = JniEnv::empty(self);
+
+            let detail_field = env.get_field(reference, "detailMessage");
+            let detail_str = match detail_field.as_object().unwrap() {
+                Some(id) => env.get_string(id),
+                _ => String::from("no message"),
+            };
+            log_error(&format!("{}: {}", exception_class, detail_str));
+
+            let arr = env.get_field(reference, "stackTrace").as_array().unwrap();
+            let len = env.get_array_length(arr);
+            log_error(&format!("len: {}", len));
+            for i in 0..len {
+                let e = env.get_array_element(arr, i).as_object().unwrap().unwrap();
+                let res = env
+                    .invoke_instance_method(
+                        InvokeType::Virtual,
+                        e,
+                        "java/lang/Object",
+                        "toString",
+                        "()Ljava/lang/String;",
+                        &[],
+                    )
+                    .unwrap()
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .unwrap();
+                let res_str = env.get_string(res);
+                log_error(&res_str);
+            }
+        }
+
+        {
+            let mut csf = self.call_stack_frames.borrow_mut();
+            let top_frame = csf.last_mut().unwrap();
+            if let Some(metadata) = top_frame.metadata.as_ref() {
+                for exception_item in &metadata.exception_table {
+                    if top_frame.state.instruction_offset >= exception_item.start_pc as usize
+                        && top_frame.state.instruction_offset <= exception_item.end_pc as usize
+                    {
+                        let container_class = self
+                            .classpath
+                            .get_classpath_entry(&top_frame.container_class)
+                            .unwrap();
+                        let catch_type = get_constant_string(
+                            &container_class.const_pool,
+                            exception_item.catch_type,
+                        );
+                        // TODO: make this polymorphic
+                        if &exception_class == catch_type {
+                            // let top_frame_mut = csf
+                            top_frame.state.instruction_offset = exception_item.handler_pc as usize;
+                            return JavaThrowable::Handled(reference);
+                        }
+                    }
+                }
+            }
+        }
+
+        return JavaThrowable::Unhandled(reference);
+    }
+
     pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
         // let env = JniEnv::empty(self);
         // let msg = env.new_string(message);
@@ -344,11 +422,10 @@ impl Jvm {
         {
             let mut csf = self.call_stack_frames.borrow_mut();
             let top_frame = csf.last_mut().unwrap();
-            log(&format!("METADATA: {:?}", top_frame.metadata));
             if let Some(metadata) = top_frame.metadata.as_ref() {
                 for exception_item in &metadata.exception_table {
-                    if exception_item.start_pc as usize >= top_frame.state.instruction_offset
-                        && exception_item.end_pc as usize <= top_frame.state.instruction_offset
+                    if top_frame.state.instruction_offset >= exception_item.start_pc as usize
+                        && top_frame.state.instruction_offset <= exception_item.end_pc as usize
                     {
                         let container_class = self
                             .classpath
@@ -362,7 +439,7 @@ impl Jvm {
                         if exception_class == catch_type {
                             // let top_frame_mut = csf
                             top_frame.state.instruction_offset = exception_item.handler_pc as usize;
-                            return JavaThrowable::Handled;
+                            return JavaThrowable::Handled(0);
                         }
                     }
                 }
@@ -378,7 +455,7 @@ impl Jvm {
             log_error(&format!("{} {}", exception_class, stacktrace));
         }
 
-        return JavaThrowable::Unhandled;
+        return JavaThrowable::Unhandled(0);
     }
 
     pub fn new_instance(&self, root_class_name: &str) -> RuntimeResult<JavaObject> {
@@ -471,7 +548,15 @@ impl Jvm {
         self.heap_store_array(arr)
     }
 
-    pub fn create_string_object(&self, inner: &str) -> usize {
+    pub fn create_string_object(&self, inner: &str, intern: bool) -> usize {
+        // let owned = String::from(inner);
+        if intern {
+            let heap = self.heap.borrow();
+            if let Some(id) = heap.interned_string_map.get(inner) {
+                return *id;
+            }
+        }
+
         let mut instance = self.new_instance("java/lang/String").unwrap();
 
         let chars: Vec<JavaValue> = inner
@@ -484,6 +569,11 @@ impl Jvm {
             .set_field(self, "value", JavaValue::Array(array_id))
             .unwrap();
 
-        self.heap_store_instance(instance)
+        let id = self.heap_store_instance(instance);
+        if intern {
+            let mut heap = self.heap.borrow_mut();
+            heap.interned_string_map.insert(String::from(inner), id);
+        }
+        id
     }
 }

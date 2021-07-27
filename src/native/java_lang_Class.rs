@@ -1,8 +1,4 @@
-use crate::{
-    model::{JavaArrayType, JavaValue, RuntimeResult},
-    util::get_constant_string,
-    Classpath, JniEnv,
-};
+use crate::{Classpath, JniEnv, model::{JavaArrayType, JavaValue, RuntimeResult}, util::{get_constant_string, log_error}};
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_registerNatives(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
@@ -96,6 +92,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
     let result_array = env.new_array(JavaArrayType::Object(field_type_id), fields.len());
     for i in 0..fields.len() {
         let field = &fields[i];
+        log_error(&format!("REFLECT: {}: {:?}", class_name, field));
         let reflected_field = env.new_instance("java/lang/reflect/Field");
         env.set_field(
             reflected_field,
@@ -106,7 +103,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
         env.set_field(
             reflected_field,
             "name",
-            JavaValue::Object(Some(env.new_string(get_constant_string(
+            JavaValue::Object(Some(env.new_interned_string(get_constant_string(
                 &class_file.const_pool,
                 field.name_index,
             )))),

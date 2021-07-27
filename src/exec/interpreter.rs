@@ -158,7 +158,7 @@ impl InstructionExecutor {
             ConstantInfo::String(sc) => match &const_pool[sc.string_index as usize - 1] {
                 ConstantInfo::Utf8(inner) => {
                     let str = inner.utf8_string.clone();
-                    let obj = jvm.create_string_object(str.as_str());
+                    let obj = jvm.create_string_object(str.as_str(), true);
                     JavaValue::Object(Some(obj))
                 }
                 x => panic!("bad string constant definition: {:?}", x),
@@ -238,6 +238,16 @@ impl InstructionExecutor {
     }
 
     pub fn step(&self, jvm: &Jvm) -> RuntimeResult<()> {
+        match self.step_unchecked(jvm) {
+            Ok(_) => Ok(()),
+            Err(ex) => match ex {
+                JavaThrowable::Handled(_) => Ok(()),
+                JavaThrowable::Unhandled(_) => return Err(ex),
+            },
+        }
+    }
+
+    fn step_unchecked(&self, jvm: &Jvm) -> RuntimeResult<()> {
         let ic = { self.instruction_count.borrow().clone() };
         if ic == 31000 {
             unsafe { util::PERMIT_LOGGING = true }
@@ -452,11 +462,6 @@ impl InstructionExecutor {
             Instruction::Aload1 => state.stack.push(state.lvt[1].clone()),
             Instruction::Aload2 => state.stack.push(state.lvt[2].clone()),
             Instruction::Aload3 => state.stack.push(state.lvt[3].clone()),
-            Instruction::Astore(register) => state.lvt[*register as usize] = pop!(),
-            Instruction::Astore0 => state.lvt[0] = pop!(),
-            Instruction::Astore1 => state.lvt[1] = pop!(),
-            Instruction::Astore2 => state.lvt[2] = pop!(),
-            Instruction::Astore3 => state.lvt[3] = pop!(),
             Instruction::Anewarray(type_ref_id) => {
                 let const_pool = use_const_pool!();
                 let type_str = get_constant_string(const_pool, *type_ref_id);
@@ -502,6 +507,18 @@ impl InstructionExecutor {
                 state
                     .stack
                     .push(JavaValue::Int(arrayref.values.len() as i32));
+            }
+            Instruction::Astore(register) => state.lvt[*register as usize] = pop!(),
+            Instruction::Astore0 => state.lvt[0] = pop!(),
+            Instruction::Astore1 => state.lvt[1] = pop!(),
+            Instruction::Astore2 => state.lvt[2] = pop!(),
+            Instruction::Astore3 => state.lvt[3] = pop!(),
+            Instruction::Athrow => {
+                let ex = match pop!().as_object().expect("expecting object ref") {
+                    Some(obj) => obj,
+                    None => return Err(jvm.throw_npe()),
+                };
+                return Err(jvm.throw_exception_ref(ex));
             }
             Instruction::Bipush(val) => state.stack.push(JavaValue::Int(*val as i32)),
             Instruction::Checkcast(compare_type_id) => {

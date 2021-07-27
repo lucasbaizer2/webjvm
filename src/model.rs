@@ -345,6 +345,7 @@ pub struct Heap {
     pub loaded_classes_lookup: HashMap<String, usize>,
     pub object_heap_map: HashMap<usize, JavaObject>,
     pub array_heap_map: HashMap<usize, JavaArray>,
+    pub interned_string_map: HashMap<String, usize>,
     pub object_id_offset: usize,
     pub main_thread_object: usize,
 }
@@ -353,6 +354,6 @@ pub type RuntimeResult<T> = std::result::Result<T, JavaThrowable>;
 
 #[derive(Debug)]
 pub enum JavaThrowable {
-    Handled,
-    Unhandled,
+    Handled(usize),
+    Unhandled(usize),
 }

@@ -29,11 +29,24 @@ impl<'a> JniEnv<'a> {
     }
 
     pub fn new_string(&self, str: &str) -> usize {
-        self.jvm.create_string_object(str)
+        self.jvm.create_string_object(str, false)
+    }
+
+    pub fn new_interned_string(&self, str: &str) -> usize {
+        self.jvm.create_string_object(str, true)
     }
 
     pub fn new_array(&self, array_type: JavaArrayType, length: usize) -> usize {
         self.jvm.create_empty_array(array_type, length)
+    }
+
+    pub fn get_array_length(&self, array_id: usize) -> usize {
+        let heap = self.jvm.heap.borrow();
+        let array = heap
+            .array_heap_map
+            .get(&array_id)
+            .expect("invalid array ref");
+        array.values.len()
     }
 
     pub fn get_array_element(&self, array_id: usize, index: usize) -> JavaValue {
@@ -71,6 +84,16 @@ impl<'a> JniEnv<'a> {
         let heap = self.jvm.heap.borrow();
         let class = &heap.loaded_classes[class_id];
         class.class_object_id
+    }
+
+    pub fn get_object_type_name(&self, instance_id: usize) -> String {
+        let heap = self.jvm.heap.borrow();
+        let obj = &heap
+            .object_heap_map
+            .get(&instance_id)
+            .expect("invalid object ref");
+        let class = &heap.loaded_classes[obj.class_id];
+        class.java_type.clone()
     }
 
     pub fn get_string(&self, str_id: usize) -> String {

@@ -34,6 +34,8 @@ pub mod java_lang_ClassLoader;
 #[allow(non_snake_case)]
 pub mod java_lang_Object;
 #[allow(non_snake_case)]
+pub mod java_lang_String;
+#[allow(non_snake_case)]
 pub mod java_lang_System;
 #[allow(non_snake_case)]
 pub mod java_lang_Float;
@@ -41,6 +43,8 @@ pub mod java_lang_Float;
 pub mod java_lang_Double;
 #[allow(non_snake_case)]
 pub mod java_lang_Thread;
+#[allow(non_snake_case)]
+pub mod java_lang_Throwable;
 
 #[allow(non_snake_case)]
 pub mod java_io_FileInputStream;
@@ -62,12 +66,14 @@ pub mod sun_reflect_Reflection;
 
 pub fn initialize(cp: &mut Classpath) {
     java_lang_Object::initialize(cp);
+    java_lang_String::initialize(cp);
     java_lang_Class::initialize(cp);
     java_lang_ClassLoader::initialize(cp);
     java_lang_System::initialize(cp);
     java_lang_Float::initialize(cp);
     java_lang_Double::initialize(cp);
     java_lang_Thread::initialize(cp);
+    java_lang_Throwable::initialize(cp);
 
     java_io_FileInputStream::initialize(cp);
     java_io_FileOutputStream::initialize(cp);
