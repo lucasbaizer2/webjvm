@@ -55,6 +55,7 @@ dependencies = [
  "bitflags",
  "cesu8",
  "nom",
+ "wasm-bindgen",
 ]
 
 [[package]]

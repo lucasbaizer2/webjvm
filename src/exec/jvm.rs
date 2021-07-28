@@ -147,11 +147,25 @@ impl Jvm {
             let heap = self.heap.borrow();
             heap.loaded_classes_lookup.get(cls).cloned()
         } {
-            Some(id) => Ok(id),
+            Some(id) => {
+                if initialize {
+                    let is_initialized = {
+                        let heap = self.heap.borrow();
+                        let class = &heap.loaded_classes[id];
+                        class.is_initialized
+                    };
+                    if !is_initialized {
+                        self.initialize_class(cls)?;
+                    }
+                }
+
+                Ok(id)
+            }
             None => {
                 let loaded_class = match cls.chars().next().unwrap() {
                     '[' => JavaClass {
                         java_type: String::from(cls),
+                        superclass_id: 0,
                         static_fields: HashMap::new(),
                         class_object_id: 0,
                         is_array_type: true,
@@ -160,6 +174,7 @@ impl Jvm {
                             String::from("java/io/Serializable"),
                             String::from("java/lang/Cloneable"),
                         ],
+                        is_initialized: true,
                     },
                     x => match x {
                         'B' | 'S' | 'I' | 'J' | 'F' | 'D' | 'C' | 'Z' => JavaClass {
@@ -174,11 +189,13 @@ impl Jvm {
                                 'Z' => "boolean",
                                 _ => panic!(),
                             }),
+                            superclass_id: 0,
                             static_fields: HashMap::new(),
                             class_object_id: 0,
                             is_array_type: false,
                             is_primitive_type: true,
                             direct_interfaces: Vec::new(),
+                            is_initialized: true,
                         },
                         _ => {
                             let class_file = match self.classpath.get_classpath_entry(cls) {
@@ -189,15 +206,13 @@ impl Jvm {
                                 }
                             };
 
-                            if class_file.super_class != 0 {
-                                self.ensure_class_loaded(
-                                    &get_constant_string(
-                                        &class_file.const_pool,
-                                        class_file.super_class,
-                                    ),
+                            let superclass_id = match class_file.super_class {
+                                0 => 0,
+                                id => self.ensure_class_loaded(
+                                    &get_constant_string(&class_file.const_pool, id),
                                     initialize,
-                                )?;
-                            }
+                                )?,
+                            };
 
                             let declared_fields: Vec<&FieldInfo> = class_file
                                 .fields
@@ -226,11 +241,13 @@ impl Jvm {
 
                             JavaClass {
                                 java_type: String::from(cls),
+                                superclass_id,
                                 static_fields,
                                 class_object_id: 0,
                                 is_array_type: false,
                                 is_primitive_type: false,
                                 direct_interfaces,
+                                is_initialized: false,
                             }
                         }
                     },
@@ -290,11 +307,52 @@ impl Jvm {
             .classpath
             .get_static_method(class_file, "<clinit>", "()V")
         {
+            {
+                let mut heap = self.heap.borrow_mut();
+                let class_id = heap.loaded_classes_lookup[cls];
+                heap.loaded_classes[class_id].is_initialized = true;
+            }
+
             let env = JniEnv::empty(self);
             env.invoke_static_method(cls, "<clinit>", "()V", &[])?;
         }
 
         Ok(())
+    }
+
+    pub fn is_assignable_from(&self, superclass: &str, subclass: &str) -> RuntimeResult<bool> {
+        let heap = self.heap.borrow();
+        let class_id = heap.loaded_classes_lookup[subclass];
+        let mut current_class = &heap.loaded_classes[class_id];
+        Ok('l: loop {
+            if &current_class.java_type == superclass {
+                break true;
+            }
+            for interface in &current_class.direct_interfaces {
+                if interface == superclass {
+                    break 'l true;
+                }
+            }
+
+            let cls = match self.classpath.get_classpath_entry(&current_class.java_type) {
+                Some(file) => file,
+                None => {
+                    return Err(self.throw_exception(
+                        "java/lang/NoClassDefError",
+                        Some(&current_class.java_type),
+                    ))
+                }
+            };
+            if cls.super_class == 0 {
+                break 'l false;
+            }
+            let superclass_name = get_constant_string(&cls.const_pool, cls.super_class);
+            let class_id = heap
+                .loaded_classes_lookup
+                .get(superclass_name)
+                .expect("invalid superclass");
+            current_class = &heap.loaded_classes[*class_id];
+        })
     }
 
     pub fn throw_npe(&self) -> JavaThrowable {

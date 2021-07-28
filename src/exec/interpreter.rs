@@ -180,7 +180,7 @@ impl InstructionExecutor {
         Ok(())
     }
 
-    fn is_instance_of(
+    pub fn is_instance_of(
         &self,
         jvm: &Jvm,
         val: &JavaValue,
@@ -189,42 +189,15 @@ impl InstructionExecutor {
         let res = match val {
             JavaValue::Object(instance) => match instance {
                 Some(instance_id) => {
-                    let heap = jvm.heap.borrow();
-                    let obj = heap
-                        .object_heap_map
-                        .get(&instance_id)
-                        .expect("bad object ref");
-                    let mut current_class = &heap.loaded_classes[obj.class_id];
-                    'l: loop {
-                        if &current_class.java_type == compare_type {
-                            break true;
-                        }
-                        for interface in &current_class.direct_interfaces {
-                            if interface == compare_type {
-                                break 'l true;
-                            }
-                        }
-
-                        let cls = match jvm.classpath.get_classpath_entry(&current_class.java_type)
-                        {
-                            Some(file) => file,
-                            None => {
-                                return Err(jvm.throw_exception(
-                                    "java/lang/NoClassDefError",
-                                    Some(&current_class.java_type),
-                                ))
-                            }
-                        };
-                        if cls.super_class == 0 {
-                            break 'l false;
-                        }
-                        let superclass_name = get_constant_string(&cls.const_pool, cls.super_class);
-                        let class_id = heap
-                            .loaded_classes_lookup
-                            .get(superclass_name)
-                            .expect("invalid superclass");
-                        current_class = &heap.loaded_classes[*class_id];
-                    }
+                    let current_class = {
+                        let heap = jvm.heap.borrow();
+                        let obj = heap
+                            .object_heap_map
+                            .get(&instance_id)
+                            .expect("bad object ref");
+                        heap.loaded_classes[obj.class_id].java_type.clone()
+                    };
+                    jvm.is_assignable_from(compare_type, &current_class)?
                 }
                 None => true,
             },
@@ -249,7 +222,7 @@ impl InstructionExecutor {
 
     fn step_unchecked(&self, jvm: &Jvm) -> RuntimeResult<()> {
         let ic = { self.instruction_count.borrow().clone() };
-        if ic == 31000 {
+        if ic == 38000 {
             unsafe { util::PERMIT_LOGGING = true }
         }
         log(&format!("Instruction counter: {}", ic));

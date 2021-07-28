@@ -79,6 +79,14 @@ fn Java_java_lang_System_initProperties(env: &JniEnv) -> RuntimeResult<Option<Ja
     Ok(Some(JavaValue::Object(Some(prop_map))))
 }
 
+#[allow(non_snake_case)]
+fn Java_java_lang_System_setIn0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let stdin = env.parameters[0].clone();
+    env.set_static_field("java/lang/System", "in", stdin);
+
+    Ok(None)
+}
+
 pub fn initialize(cp: &mut Classpath) {
     register_jni!(
         cp,
@@ -86,6 +94,7 @@ pub fn initialize(cp: &mut Classpath) {
         Java_java_lang_System_currentTimeMillis,
         Java_java_lang_System_nanoTime,
         Java_java_lang_System_initProperties,
-        Java_java_lang_System_arraycopy
+        Java_java_lang_System_arraycopy,
+        Java_java_lang_System_setIn0
     );
 }

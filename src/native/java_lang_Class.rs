@@ -1,4 +1,8 @@
-use crate::{Classpath, JniEnv, model::{JavaArrayType, JavaValue, RuntimeResult}, util::{get_constant_string, log_error}};
+use crate::{
+    model::{JavaArrayType, JavaValue, RuntimeResult},
+    util::{get_constant_string, log_error},
+    Classpath, JniEnv,
+};
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_registerNatives(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
@@ -88,26 +92,45 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
     let class_file = env.get_class_file(&class_name);
     let fields = &class_file.fields;
 
-    let field_type_id = env.get_class_id("java/lang/reflect/Field");
+    log_error("14");
+
+    let mut starting_offset = 0usize;
+    let mut superclass = env.get_superclass(&class_name);
+    while superclass.is_some() {
+        let sc_name = superclass.as_ref().unwrap();
+        starting_offset += env.get_class_file(sc_name).fields_count as usize;
+
+        superclass = env.get_superclass(sc_name);
+    }
+
+    log_error("15");
+    let field_type_id = env.load_class("java/lang/reflect/Field", false);
     let result_array = env.new_array(JavaArrayType::Object(field_type_id), fields.len());
     for i in 0..fields.len() {
         let field = &fields[i];
-        log_error(&format!("REFLECT: {}: {:?}", class_name, field));
         let reflected_field = env.new_instance("java/lang/reflect/Field");
+        log_error("16");
+        let field_name = env.new_interned_string(get_constant_string(
+            &class_file.const_pool,
+            field.name_index,
+        ));
+        log_error(&format!(
+            "REFLECT: {}: {:?}: FO = {}",
+            class_name,
+            field,
+            starting_offset + i
+        ));
         env.set_field(
             reflected_field,
             "clazz",
             JavaValue::Object(Some(env.get_current_instance())),
         );
-        env.set_field(reflected_field, "slot", JavaValue::Int(i as i32));
         env.set_field(
             reflected_field,
-            "name",
-            JavaValue::Object(Some(env.new_interned_string(get_constant_string(
-                &class_file.const_pool,
-                field.name_index,
-            )))),
+            "slot",
+            JavaValue::Int(starting_offset as i32 + i as i32),
         );
+        env.set_field(reflected_field, "name", JavaValue::Object(Some(field_name)));
 
         let mut field_type_name =
             get_constant_string(&class_file.const_pool, field.descriptor_index).as_str();
@@ -115,7 +138,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
             field_type_name = &field_type_name[1..field_type_name.len() - 1];
         }
 
-        let field_type_id = env.get_class_id(field_type_name);
+        let field_type_id = env.load_class(field_type_name, false);
         let field_type_class = env.get_class_object(field_type_id);
         env.set_field(
             reflected_field,
@@ -135,6 +158,36 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
     Ok(Some(JavaValue::Array(result_array)))
 }
 
+#[allow(non_snake_case)]
+fn Java_java_lang_Class_isPrimitive(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let class_name = env
+        .get_internal_metadata(env.get_current_instance(), "class_name")
+        .unwrap();
+
+    let is_primitive = match class_name.chars().next().unwrap() {
+        'B' | 'S' | 'I' | 'J' | 'F' | 'D' | 'Z' | 'C' | 'V' => true,
+        _ => false,
+    };
+
+    Ok(Some(JavaValue::Boolean(is_primitive)))
+}
+
+#[allow(non_snake_case)]
+fn Java_java_lang_Class_isAssignableFrom(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let this_class = env.get_current_instance();
+    let compare_class = env.parameters[1].as_object().unwrap().unwrap();
+
+    let this_class_name = env.get_internal_metadata(this_class, "class_name").unwrap();
+    let compare_class_name = env
+        .get_internal_metadata(compare_class, "class_name")
+        .unwrap();
+    let is_assignable_from = env
+        .jvm
+        .is_assignable_from(&this_class_name, &compare_class_name)?;
+
+    Ok(Some(JavaValue::Boolean(is_assignable_from)))
+}
+
 pub fn initialize(cp: &mut Classpath) {
     register_jni!(
         cp,
@@ -145,6 +198,8 @@ pub fn initialize(cp: &mut Classpath) {
         Java_java_lang_Class_getComponentType,
         Java_java_lang_Class_getPrimitiveClass,
         Java_java_lang_Class_forName0,
-        Java_java_lang_Class_getDeclaredFields0
+        Java_java_lang_Class_getDeclaredFields0,
+        Java_java_lang_Class_isPrimitive,
+        Java_java_lang_Class_isAssignableFrom
     );
 }

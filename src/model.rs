@@ -167,11 +167,13 @@ impl JavaObject {
 #[derive(Debug)]
 pub struct JavaClass {
     pub java_type: String,
+    pub superclass_id: usize,
     pub direct_interfaces: Vec<String>,
     pub is_array_type: bool,
     pub is_primitive_type: bool,
     pub static_fields: HashMap<String, JavaValue>,
     pub class_object_id: usize,
+    pub is_initialized: bool,
 }
 
 impl JavaClass {

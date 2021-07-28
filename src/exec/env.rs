@@ -80,6 +80,17 @@ impl<'a> JniEnv<'a> {
         self.jvm.ensure_class_loaded(class, true).unwrap()
     }
 
+    pub fn get_superclass(&self, subclass: &str) -> Option<String> {
+        let subclass_id = self.load_class(subclass, false);
+
+        let heap = self.jvm.heap.borrow();
+        let class = &heap.loaded_classes[subclass_id];
+        match class.superclass_id {
+            0 => None,
+            id => Some(heap.loaded_classes[id].java_type.clone()),
+        }
+    }
+
     pub fn get_class_object(&self, class_id: usize) -> usize {
         let heap = self.jvm.heap.borrow();
         let class = &heap.loaded_classes[class_id];
@@ -103,7 +114,7 @@ impl<'a> JniEnv<'a> {
             .get(&str_id)
             .expect("invalid object ref");
         if obj.class_id != self.get_class_id("java/lang/String") {
-            panic!("invalid string ref");
+            panic!("invalid string ref: {:?}", obj);
         }
 
         let value_array = obj.get_field(self.jvm, "value").unwrap();
@@ -131,6 +142,13 @@ impl<'a> JniEnv<'a> {
     pub fn new_instance(&self, class: &str) -> usize {
         let obj = self.jvm.new_instance(class).unwrap();
         self.jvm.heap_store_instance(obj)
+    }
+
+    pub fn set_static_field(&self, class_name: &str, field_name: &str, value: JavaValue) {
+        let mut heap = self.jvm.heap.borrow_mut();
+        let lookup = heap.loaded_classes_lookup[class_name];
+        let cls = &mut heap.loaded_classes[lookup];
+        cls.set_static_field(field_name, value);
     }
 
     pub fn set_field(&self, instance_id: usize, field_name: &str, value: JavaValue) {
