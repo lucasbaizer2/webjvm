@@ -1,4 +1,7 @@
-use crate::{Classpath, JniEnv, model::{JavaValue, RuntimeResult}};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    Classpath, JniEnv,
+};
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Float_floatToRawIntBits(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {

@@ -39,11 +39,7 @@ fn Java_java_lang_Throwable_fillInStackTrace(env: &JniEnv) -> RuntimeResult<Opti
         )?;
         env.set_array_element(stacktrace, i - 1, JavaValue::Object(Some(ste)));
     }
-    env.set_field(
-        env.get_current_instance(),
-        "stackTrace",
-        JavaValue::Array(stacktrace),
-    );
+    env.set_field(env.get_current_instance(), "stackTrace", JavaValue::Array(stacktrace));
 
     Ok(Some(JavaValue::Object(Some(env.get_current_instance()))))
 }

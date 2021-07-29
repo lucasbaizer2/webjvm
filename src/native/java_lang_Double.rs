@@ -16,9 +16,5 @@ fn Java_java_lang_Double_longBitsToDouble(env: &JniEnv) -> RuntimeResult<Option<
 }
 
 pub fn initialize(cp: &mut Classpath) {
-    register_jni!(
-        cp,
-        Java_java_lang_Double_doubleToRawLongBits,
-        Java_java_lang_Double_longBitsToDouble
-    );
+    register_jni!(cp, Java_java_lang_Double_doubleToRawLongBits, Java_java_lang_Double_longBitsToDouble);
 }

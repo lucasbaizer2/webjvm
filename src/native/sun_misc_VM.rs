@@ -1,4 +1,7 @@
-use crate::{Classpath, JniEnv, model::{JavaValue, RuntimeResult}};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    Classpath, JniEnv,
+};
 
 #[allow(non_snake_case)]
 fn Java_sun_misc_VM_initialize(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {

@@ -25,9 +25,7 @@ pub struct StackTraceElement {
 
 impl NativeMethod for js_sys::Function {
     fn invoke(&self, env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-        let res = self
-            .call0(&JsValue::null())
-            .expect("error invoking JavaScript function");
+        let res = self.call0(&JsValue::null()).expect("error invoking JavaScript function");
         if res.is_string() {
             let str: String = res.as_string().unwrap();
             return Ok(Some(JavaValue::Object(Some(env.new_string(&str)))));
@@ -105,9 +103,7 @@ impl Classpath {
     }
 
     pub fn get_classpath_entry(&self, name: &str) -> Option<&ClassFile> {
-        self.class_files
-            .iter()
-            .find(|c| get_constant_string(&c.const_pool, c.this_class) == name)
+        self.class_files.iter().find(|c| get_constant_string(&c.const_pool, c.this_class) == name)
     }
 
     pub fn get_field<'a>(
@@ -118,8 +114,7 @@ impl Classpath {
     ) -> Option<&'a FieldInfo> {
         declaring_class.fields.iter().find(|field| {
             get_constant_string(&declaring_class.const_pool, field.name_index) == field_name
-                && get_constant_string(&declaring_class.const_pool, field.descriptor_index)
-                    == field_descriptor
+                && get_constant_string(&declaring_class.const_pool, field.descriptor_index) == field_descriptor
         })
     }
 
@@ -131,15 +126,9 @@ impl Classpath {
         method_descriptor: &str,
     ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
         match invoke_type {
-            InvokeType::Special => {
-                self.get_special_method(declaring_class, method_name, method_descriptor)
-            }
-            InvokeType::Static => {
-                self.get_static_method(declaring_class, method_name, method_descriptor)
-            }
-            InvokeType::Virtual => {
-                self.get_virtual_method(declaring_class, method_name, method_descriptor)
-            }
+            InvokeType::Special => self.get_special_method(declaring_class, method_name, method_descriptor),
+            InvokeType::Static => self.get_static_method(declaring_class, method_name, method_descriptor),
+            InvokeType::Virtual => self.get_virtual_method(declaring_class, method_name, method_descriptor),
         }
     }
 
@@ -149,21 +138,15 @@ impl Classpath {
         method_name: &str,
         method_descriptor: &str,
     ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
-        self.get_special_method(declaring_class, method_name, method_descriptor)
-            .or_else(|| {
-                if declaring_class.super_class == 0 {
-                    None
-                } else {
-                    let superclass_name = get_constant_string(
-                        &declaring_class.const_pool,
-                        declaring_class.super_class,
-                    );
-                    let superclass = self
-                        .get_classpath_entry(superclass_name)
-                        .expect("class not found");
-                    self.get_virtual_method(superclass, method_name, method_descriptor)
-                }
-            })
+        self.get_special_method(declaring_class, method_name, method_descriptor).or_else(|| {
+            if declaring_class.super_class == 0 {
+                None
+            } else {
+                let superclass_name = get_constant_string(&declaring_class.const_pool, declaring_class.super_class);
+                let superclass = self.get_classpath_entry(superclass_name).expect("class not found");
+                self.get_virtual_method(superclass, method_name, method_descriptor)
+            }
+        })
     }
 
     pub fn get_static_method<'a>(
@@ -177,13 +160,10 @@ impl Classpath {
             .iter()
             .find(|method| {
                 if method.access_flags.contains(MethodAccessFlags::STATIC) {
-                    let current_name =
-                        get_constant_string(&declaring_class.const_pool, method.name_index);
+                    let current_name = get_constant_string(&declaring_class.const_pool, method.name_index);
                     if current_name == method_name {
-                        let current_descriptor = get_constant_string(
-                            &declaring_class.const_pool,
-                            method.descriptor_index,
-                        );
+                        let current_descriptor =
+                            get_constant_string(&declaring_class.const_pool, method.descriptor_index);
                         if current_descriptor == method_descriptor {
                             return true;
                         }
@@ -206,13 +186,10 @@ impl Classpath {
             .iter()
             .find(|method| {
                 if !method.access_flags.contains(MethodAccessFlags::STATIC) {
-                    let current_name =
-                        get_constant_string(&declaring_class.const_pool, method.name_index);
+                    let current_name = get_constant_string(&declaring_class.const_pool, method.name_index);
                     if current_name == method_name {
-                        let current_descriptor = get_constant_string(
-                            &declaring_class.const_pool,
-                            method.descriptor_index,
-                        );
+                        let current_descriptor =
+                            get_constant_string(&declaring_class.const_pool, method.descriptor_index);
                         if current_descriptor == method_descriptor {
                             return true;
                         }
@@ -229,9 +206,7 @@ impl Classpath {
         classes.reverse();
 
         for file in classes {
-            if let Some(main_method) =
-                self.get_static_method(file, "main", "([Ljava/lang/String;)V")
-            {
+            if let Some(main_method) = self.get_static_method(file, "main", "([Ljava/lang/String;)V") {
                 return Some((file, main_method.1));
             }
         }
@@ -297,6 +272,12 @@ impl WebJvmRuntime {
         heap.loaded_classes[id].java_type.clone()
     }
 
+    #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = dumpClass)]
+    pub fn dump_class(&self, name: &str) -> String {
+        let heap = self.jvm.heap.borrow();
+        format!("{:?}", heap.loaded_classes[heap.loaded_classes_lookup[name]])
+    }
+
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = getObject)]
     pub fn get_object(&self, id: usize) -> String {
         let heap = self.jvm.heap.borrow();
@@ -318,26 +299,15 @@ impl WebJvmRuntime {
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = executeMain)]
     pub fn execute_main(&self) -> Result<(), JsValue> {
         let frame = {
-            let (main_class, main_method) = self
-                .jvm
-                .classpath
-                .get_main_method()
-                .expect("no main method found on classpath");
-            log(&format!(
-                "Main method: {:?}",
-                get_constant_string(&main_class.const_pool, main_class.this_class)
-            ));
+            let (main_class, main_method) =
+                self.jvm.classpath.get_main_method().expect("no main method found on classpath");
+            log(&format!("Main method: {:?}", get_constant_string(&main_class.const_pool, main_class.this_class)));
 
-            self.jvm
-                .create_stack_frame(main_class, main_method)
-                .unwrap()
+            self.jvm.create_stack_frame(main_class, main_method).unwrap()
         };
         exec::env::initialize(&self.jvm);
         self.jvm.push_call_stack_frame(frame);
-        self.jvm
-            .executor
-            .step_until_stack_depth(&self.jvm, 1)
-            .unwrap();
+        self.jvm.executor.step_until_stack_depth(&self.jvm, 1).unwrap();
 
         Ok(())
     }
@@ -346,4 +316,45 @@ impl WebJvmRuntime {
 #[wasm_bindgen(start)]
 pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    pub fn run_tests() {
+        use crate::*;
+        let mut cp = WebJvmClasspath::new();
+        cp.add_classpath_jar(include_bytes!("../test/java/skinny-stdlib.jar"));
+        cp.add_classpath_jar(include_bytes!("../test/java/webjvm-stdlib.jar"));
+        cp.add_classpath_entry(include_bytes!("../test/java/MainTest.class"));
+
+        println!("Executing JVM...");
+        let rt = WebJvmRuntime::new(cp);
+        rt.execute_main().unwrap();
+        println!("Finished executing!");
+
+        // await init();
+        // console.log('Called init, downloading content....');
+    
+        // const stdlib = await fetch('./java/skinny-stdlib.jar');
+        // const webjvm = await fetch('./java/webjvm-stdlib.jar');
+        // const cls = await fetch('./java/MainTest.class');
+
+        // const stdlibBuffer = await stdlib.arrayBuffer();
+        // const webjvmBuffer = await webjvm.arrayBuffer();
+        // const classBuffer = await cls.arrayBuffer();
+
+        // console.log('Downloaded content, adding to VM classpath...');
+
+        // const cp = new WebJvmClasspath();
+        // cp.addClasspathJar(new Uint8Array(stdlibBuffer));
+        // cp.addClasspathJar(new Uint8Array(webjvmBuffer));
+        // cp.addClasspathEntry(new Uint8Array(classBuffer));
+        // // jvm.addNativeMethod(Java_java_lang_System_registerNatives);
+
+        // console.log('Executing JVM...');
+        // const jvm = window.jvm = new WebJvmRuntime(cp);
+        // jvm.executeMain();
+        // console.log('Finished executing!');
+    }
 }

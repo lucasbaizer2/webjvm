@@ -1,4 +1,7 @@
-use crate::{Classpath, JniEnv, model::{JavaValue, RuntimeResult}};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    Classpath, JniEnv,
+};
 
 #[allow(non_snake_case)]
 fn Java_sun_reflect_Reflection_getCallerClass(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
@@ -12,6 +15,14 @@ fn Java_sun_reflect_Reflection_getCallerClass(env: &JniEnv) -> RuntimeResult<Opt
     Ok(Some(JavaValue::Object(Some(class_obj))))
 }
 
+#[allow(non_snake_case)]
+fn Java_sun_reflect_Reflection_getClassAccessFlags(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let class_obj = env.parameters[0].as_object().unwrap().unwrap();
+    let class_name = env.get_internal_metadata(class_obj, "class_name").unwrap();
+    let class_file = env.get_class_file(&class_name);
+    Ok(Some(JavaValue::Int(class_file.access_flags.bits() as i32 & 0x1FFF)))
+}
+
 pub fn initialize(cp: &mut Classpath) {
-    register_jni!(cp, Java_sun_reflect_Reflection_getCallerClass);
+    register_jni!(cp, Java_sun_reflect_Reflection_getCallerClass, Java_sun_reflect_Reflection_getClassAccessFlags);
 }

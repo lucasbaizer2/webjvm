@@ -1,5 +1,6 @@
 use crate::model::*;
 use crate::{java::MethodDescriptor, util::*, Classpath, InvokeType, JniEnv};
+use classfile_parser::ClassAccessFlags;
 use classfile_parser::{
     attribute_info::code_attribute_parser,
     code_attribute::code_parser,
@@ -37,16 +38,11 @@ impl Jvm {
         }
     }
 
-    pub fn create_stack_frame(
-        &self,
-        cls: &ClassFile,
-        method: &MethodInfo,
-    ) -> RuntimeResult<CallStackFrame> {
+    pub fn create_stack_frame(&self, cls: &ClassFile, method: &MethodInfo) -> RuntimeResult<CallStackFrame> {
         let container_class = get_constant_string(&cls.const_pool, cls.this_class).clone();
-        let container_method_descriptor =
-            get_constant_string(&cls.const_pool, method.descriptor_index);
-        let container_method = get_constant_string(&cls.const_pool, method.name_index).clone()
-            + container_method_descriptor;
+        let container_method_descriptor = get_constant_string(&cls.const_pool, method.descriptor_index);
+        let container_method =
+            get_constant_string(&cls.const_pool, method.name_index).clone() + container_method_descriptor;
 
         if method.access_flags.contains(MethodAccessFlags::NATIVE) {
             // let parameters_info = method
@@ -58,8 +54,7 @@ impl Jvm {
             //     })
             //     .expect("missing MethodParameters");
             // let (_, mp) = method_parameters_attribute_parser(&parameters_info.info).unwrap();
-            let md =
-                MethodDescriptor::new(container_method_descriptor).expect("bad method descriptor");
+            let md = MethodDescriptor::new(container_method_descriptor).expect("bad method descriptor");
             let mut lvt_len = md
                 .argument_types
                 .iter()
@@ -101,8 +96,7 @@ impl Jvm {
             ));
         } else {
             let (_, code_attribute) = code_attribute_parser(&method.attributes[0].info).unwrap();
-            let (_, instructions) =
-                code_parser(&code_attribute.code).expect("error parsing method instructions");
+            let (_, instructions) = code_parser(&code_attribute.code).expect("error parsing method instructions");
             log(&format!(
                 "Creating new stack frame at {}.{} with instructions: {:?}",
                 container_class, container_method, instructions
@@ -162,10 +156,12 @@ impl Jvm {
                 Ok(id)
             }
             None => {
-                let loaded_class = match cls.chars().next().unwrap() {
+                let mut loaded_class = match cls.chars().next().unwrap() {
                     '[' => JavaClass {
                         java_type: String::from(cls),
-                        superclass_id: 0,
+                        class_id: 0,
+                        access_flags: ClassAccessFlags::PUBLIC,
+                        superclass_id: None,
                         static_fields: HashMap::new(),
                         class_object_id: 0,
                         is_array_type: true,
@@ -189,7 +185,9 @@ impl Jvm {
                                 'Z' => "boolean",
                                 _ => panic!(),
                             }),
-                            superclass_id: 0,
+                            class_id: 0,
+                            access_flags: ClassAccessFlags::PUBLIC,
+                            superclass_id: None,
                             static_fields: HashMap::new(),
                             class_object_id: 0,
                             is_array_type: false,
@@ -201,31 +199,27 @@ impl Jvm {
                             let class_file = match self.classpath.get_classpath_entry(cls) {
                                 Some(file) => file,
                                 None => {
-                                    return Err(self
-                                        .throw_exception("java/lang/NoClassDefError", Some(cls)));
+                                    return Err(self.throw_exception("java/lang/NoClassDefError", Some(cls)));
                                 }
                             };
 
                             let superclass_id = match class_file.super_class {
-                                0 => 0,
-                                id => self.ensure_class_loaded(
+                                0 => None,
+                                id => Some(self.ensure_class_loaded(
                                     &get_constant_string(&class_file.const_pool, id),
                                     initialize,
-                                )?,
+                                )?),
                             };
 
                             let declared_fields: Vec<&FieldInfo> = class_file
                                 .fields
                                 .iter()
-                                .filter(|field| {
-                                    field.access_flags.contains(FieldAccessFlags::STATIC)
-                                })
+                                .filter(|field| field.access_flags.contains(FieldAccessFlags::STATIC))
                                 .collect();
                             let mut static_fields = HashMap::with_capacity(declared_fields.len());
                             for field in &declared_fields {
                                 static_fields.insert(
-                                    get_constant_string(&class_file.const_pool, field.name_index)
-                                        .clone(),
+                                    get_constant_string(&class_file.const_pool, field.name_index).clone(),
                                     JavaValue::default(get_constant_string(
                                         &class_file.const_pool,
                                         field.descriptor_index,
@@ -241,6 +235,8 @@ impl Jvm {
 
                             JavaClass {
                                 java_type: String::from(cls),
+                                class_id: 0,
+                                access_flags: class_file.access_flags,
                                 superclass_id,
                                 static_fields,
                                 class_object_id: 0,
@@ -255,9 +251,11 @@ impl Jvm {
 
                 let id = {
                     let mut heap = self.heap.borrow_mut();
+                    let id = heap.loaded_classes.len();
+                    loaded_class.class_id = id;
                     heap.loaded_classes.push(loaded_class);
-                    let id = heap.loaded_classes.len() - 1;
                     heap.loaded_classes_lookup.insert(String::from(cls), id);
+
                     id
                 };
 
@@ -282,9 +280,7 @@ impl Jvm {
                     };
 
                     let java_class_obj = heap.object_heap_map.get_mut(&class_object_id).unwrap();
-                    java_class_obj
-                        .internal_metadata
-                        .insert(String::from("class_name"), String::from(cls));
+                    java_class_obj.internal_metadata.insert(String::from("class_name"), String::from(cls));
 
                     is_class_type
                 };
@@ -299,14 +295,25 @@ impl Jvm {
     }
 
     pub fn initialize_class(&self, cls: &str) -> RuntimeResult<()> {
+        {
+            let heap = self.heap.borrow();
+            let class_id = heap.loaded_classes_lookup[cls];
+            if heap.loaded_classes[class_id].is_initialized {
+                return Ok(());
+            }
+        }
+
         let class_file = match self.classpath.get_classpath_entry(cls) {
             Some(file) => file,
             None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(cls))),
         };
-        if let Some(_) = self
-            .classpath
-            .get_static_method(class_file, "<clinit>", "()V")
-        {
+
+        if class_file.super_class != 0 {
+            let superclass = get_constant_string(&class_file.const_pool, class_file.super_class);
+            self.initialize_class(superclass)?;
+        }
+
+        if let Some(_) = self.classpath.get_static_method(class_file, "<clinit>", "()V") {
             {
                 let mut heap = self.heap.borrow_mut();
                 let class_id = heap.loaded_classes_lookup[cls];
@@ -336,21 +343,13 @@ impl Jvm {
 
             let cls = match self.classpath.get_classpath_entry(&current_class.java_type) {
                 Some(file) => file,
-                None => {
-                    return Err(self.throw_exception(
-                        "java/lang/NoClassDefError",
-                        Some(&current_class.java_type),
-                    ))
-                }
+                None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(&current_class.java_type))),
             };
             if cls.super_class == 0 {
                 break 'l false;
             }
             let superclass_name = get_constant_string(&cls.const_pool, cls.super_class);
-            let class_id = heap
-                .loaded_classes_lookup
-                .get(superclass_name)
-                .expect("invalid superclass");
+            let class_id = heap.loaded_classes_lookup.get(superclass_name).expect("invalid superclass");
             current_class = &heap.loaded_classes[*class_id];
         })
     }
@@ -362,10 +361,7 @@ impl Jvm {
     pub fn throw_exception_ref(&self, reference: usize) -> JavaThrowable {
         let exception_class = {
             let heap = self.heap.borrow();
-            let obj = &heap
-                .object_heap_map
-                .get(&reference)
-                .expect("expecting object ref");
+            let obj = &heap.object_heap_map.get(&reference).expect("expecting object ref");
             let cls = &heap.loaded_classes[obj.class_id];
             cls.java_type.clone()
         };
@@ -414,14 +410,8 @@ impl Jvm {
                     if top_frame.state.instruction_offset >= exception_item.start_pc as usize
                         && top_frame.state.instruction_offset <= exception_item.end_pc as usize
                     {
-                        let container_class = self
-                            .classpath
-                            .get_classpath_entry(&top_frame.container_class)
-                            .unwrap();
-                        let catch_type = get_constant_string(
-                            &container_class.const_pool,
-                            exception_item.catch_type,
-                        );
+                        let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
+                        let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
                         // TODO: make this polymorphic
                         if &exception_class == catch_type {
                             // let top_frame_mut = csf
@@ -467,12 +457,8 @@ impl Jvm {
                     true => "<native method>",
                     false => "<unknown source>",
                 };
-                write!(
-                    &mut stacktrace,
-                    "    at {}.{}:{}\n",
-                    frame.container_class, frame.container_method, source
-                )
-                .unwrap();
+                write!(&mut stacktrace, "    at {}.{}:{}\n", frame.container_class, frame.container_method, source)
+                    .unwrap();
             }
             stacktrace
         };
@@ -485,14 +471,8 @@ impl Jvm {
                     if top_frame.state.instruction_offset >= exception_item.start_pc as usize
                         && top_frame.state.instruction_offset <= exception_item.end_pc as usize
                     {
-                        let container_class = self
-                            .classpath
-                            .get_classpath_entry(&top_frame.container_class)
-                            .unwrap();
-                        let catch_type = get_constant_string(
-                            &container_class.const_pool,
-                            exception_item.catch_type,
-                        );
+                        let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
+                        let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
                         // TODO: make this polymorphic
                         if exception_class == catch_type {
                             // let top_frame_mut = csf
@@ -505,12 +485,9 @@ impl Jvm {
         }
 
         if let Some(message_str) = message {
-            log_error(&format!(
-                "{}: {}\n{}",
-                exception_class, message_str, stacktrace
-            ));
+            log_error(&format!("{}: {}\n{}", exception_class, message_str, stacktrace));
         } else {
-            log_error(&format!("{} {}", exception_class, stacktrace));
+            log_error(&format!("{}\n{}", exception_class, stacktrace));
         }
 
         return JavaThrowable::Unhandled(0);
@@ -528,18 +505,12 @@ impl Jvm {
                 root_class_id = Some(class_id);
             }
 
-            let declared_fields: Vec<&FieldInfo> = cls
-                .fields
-                .iter()
-                .filter(|field| !field.access_flags.contains(FieldAccessFlags::STATIC))
-                .collect();
+            let declared_fields: Vec<&FieldInfo> =
+                cls.fields.iter().filter(|field| !field.access_flags.contains(FieldAccessFlags::STATIC)).collect();
             for field in &declared_fields {
                 instance_fields.insert(
                     get_constant_string(&cls.const_pool, field.name_index).clone(),
-                    JavaValue::default(get_constant_string(
-                        &cls.const_pool,
-                        field.descriptor_index,
-                    )),
+                    JavaValue::default(get_constant_string(&cls.const_pool, field.descriptor_index)),
                 );
             }
 
@@ -575,12 +546,11 @@ impl Jvm {
         idx
     }
 
-    pub fn create_constant_array(
-        &self,
-        array_type: JavaArrayType,
-        values: Vec<JavaValue>,
-    ) -> usize {
-        let arr = JavaArray { array_type, values };
+    pub fn create_constant_array(&self, array_type: JavaArrayType, values: Vec<JavaValue>) -> usize {
+        let arr = JavaArray {
+            array_type,
+            values,
+        };
 
         self.heap_store_array(arr)
     }
@@ -601,7 +571,10 @@ impl Jvm {
             length
         ];
 
-        let arr = JavaArray { array_type, values };
+        let arr = JavaArray {
+            array_type,
+            values,
+        };
 
         self.heap_store_array(arr)
     }
@@ -617,15 +590,9 @@ impl Jvm {
 
         let mut instance = self.new_instance("java/lang/String").unwrap();
 
-        let chars: Vec<JavaValue> = inner
-            .encode_utf16()
-            .into_iter()
-            .map(|c| JavaValue::Char(c))
-            .collect();
+        let chars: Vec<JavaValue> = inner.encode_utf16().into_iter().map(|c| JavaValue::Char(c)).collect();
         let array_id = self.create_constant_array(JavaArrayType::Char, chars);
-        instance
-            .set_field(self, "value", JavaValue::Array(array_id))
-            .unwrap();
+        instance.set_field(self, "value", JavaValue::Array(array_id)).unwrap();
 
         let id = self.heap_store_instance(instance);
         if intern {

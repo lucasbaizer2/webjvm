@@ -1,11 +1,5 @@
 use super::jvm::Jvm;
-use crate::{
-    model::{
-        CallStackFrame, CallStackFrameState, JavaArrayType, JavaThrowable, JavaValue, JavaValueVec,
-        RuntimeResult,
-    },
-    InvokeType, StackTraceElement,
-};
+use crate::{InvokeType, StackTraceElement, model::{CallStackFrame, CallStackFrameState, JavaArrayType, JavaClass, JavaThrowable, JavaValue, JavaValueVec, RuntimeResult}};
 use classfile_parser::{
     method_info::{MethodAccessFlags, MethodInfo},
     ClassFile,
@@ -42,28 +36,19 @@ impl<'a> JniEnv<'a> {
 
     pub fn get_array_length(&self, array_id: usize) -> usize {
         let heap = self.jvm.heap.borrow();
-        let array = heap
-            .array_heap_map
-            .get(&array_id)
-            .expect("invalid array ref");
+        let array = heap.array_heap_map.get(&array_id).expect("invalid array ref");
         array.values.len()
     }
 
     pub fn get_array_element(&self, array_id: usize, index: usize) -> JavaValue {
         let heap = self.jvm.heap.borrow();
-        let array = heap
-            .array_heap_map
-            .get(&array_id)
-            .expect("invalid array ref");
+        let array = heap.array_heap_map.get(&array_id).expect("invalid array ref");
         array.values[index].clone()
     }
 
     pub fn set_array_element(&self, array_id: usize, index: usize, value: JavaValue) {
         let mut heap = self.jvm.heap.borrow_mut();
-        let array = heap
-            .array_heap_map
-            .get_mut(&array_id)
-            .expect("invalid array ref");
+        let array = heap.array_heap_map.get_mut(&array_id).expect("invalid array ref");
         array.values[index] = value;
     }
 
@@ -86,8 +71,8 @@ impl<'a> JniEnv<'a> {
         let heap = self.jvm.heap.borrow();
         let class = &heap.loaded_classes[subclass_id];
         match class.superclass_id {
-            0 => None,
-            id => Some(heap.loaded_classes[id].java_type.clone()),
+            None => None,
+            Some(id) => Some(heap.loaded_classes[id].java_type.clone()),
         }
     }
 
@@ -99,20 +84,14 @@ impl<'a> JniEnv<'a> {
 
     pub fn get_object_type_name(&self, instance_id: usize) -> String {
         let heap = self.jvm.heap.borrow();
-        let obj = &heap
-            .object_heap_map
-            .get(&instance_id)
-            .expect("invalid object ref");
+        let obj = &heap.object_heap_map.get(&instance_id).expect("invalid object ref");
         let class = &heap.loaded_classes[obj.class_id];
         class.java_type.clone()
     }
 
     pub fn get_string(&self, str_id: usize) -> String {
         let heap = self.jvm.heap.borrow();
-        let obj = heap
-            .object_heap_map
-            .get(&str_id)
-            .expect("invalid object ref");
+        let obj = heap.object_heap_map.get(&str_id).expect("invalid object ref");
         if obj.class_id != self.get_class_id("java/lang/String") {
             panic!("invalid string ref: {:?}", obj);
         }
@@ -145,45 +124,30 @@ impl<'a> JniEnv<'a> {
     }
 
     pub fn set_static_field(&self, class_name: &str, field_name: &str, value: JavaValue) {
-        let mut heap = self.jvm.heap.borrow_mut();
-        let lookup = heap.loaded_classes_lookup[class_name];
-        let cls = &mut heap.loaded_classes[lookup];
-        cls.set_static_field(field_name, value);
+        JavaClass::set_static_field(self.jvm, class_name, field_name, value).unwrap();
     }
 
     pub fn set_field(&self, instance_id: usize, field_name: &str, value: JavaValue) {
         let mut heap = self.jvm.heap.borrow_mut();
-        let obj = heap
-            .object_heap_map
-            .get_mut(&instance_id)
-            .expect("invalid instance ID");
+        let obj = heap.object_heap_map.get_mut(&instance_id).expect("invalid instance ID");
         obj.set_field(self.jvm, field_name, value).unwrap();
     }
 
     pub fn get_field(&self, instance_id: usize, field_name: &str) -> JavaValue {
         let heap = self.jvm.heap.borrow();
-        let obj = heap
-            .object_heap_map
-            .get(&instance_id)
-            .expect("invalid instance ID");
+        let obj = heap.object_heap_map.get(&instance_id).expect("invalid instance ID");
         obj.get_field(self.jvm, field_name).unwrap().clone()
     }
 
     pub fn set_internal_metadata(&self, instance_id: usize, field_name: &str, value: &str) {
         let mut heap = self.jvm.heap.borrow_mut();
-        let obj = heap
-            .object_heap_map
-            .get_mut(&instance_id)
-            .expect("invalid instance ID");
+        let obj = heap.object_heap_map.get_mut(&instance_id).expect("invalid instance ID");
         obj.set_internal_metadata(field_name, value);
     }
 
     pub fn get_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<String> {
         let heap = self.jvm.heap.borrow();
-        let obj = heap
-            .object_heap_map
-            .get(&instance_id)
-            .expect("invalid instance ID");
+        let obj = heap.object_heap_map.get(&instance_id).expect("invalid instance ID");
         obj.get_internal_metadata(field_name).cloned()
     }
 
@@ -199,7 +163,10 @@ impl<'a> JniEnv<'a> {
             frame.state.lvt[index] = params[i].clone();
             index += 1;
             match params[i] {
-                JavaValue::Internal { is_higher_bits, .. } => {
+                JavaValue::Internal {
+                    is_higher_bits,
+                    ..
+                } => {
                     if is_higher_bits {
                         index += 1;
                     }
@@ -231,28 +198,17 @@ impl<'a> JniEnv<'a> {
         params: &[JavaValue],
     ) -> RuntimeResult<Option<JavaValue>> {
         let class = self.get_class_file(&class_name);
-        let (method_class, method) = match self.jvm.classpath.get_method(
-            InvokeType::Static,
-            class,
-            method_name,
-            method_descriptor,
-        ) {
-            Some(method) => method,
-            None => {
-                return Err(self.jvm.throw_exception(
-                    "java/lang/NoSuchMethodError",
-                    Some(&format!(
-                        "{}.{}{}",
-                        class_name, method_name, method_descriptor
-                    )),
-                ))
-            }
-        };
-        self.invoke_method(
-            method_class,
-            method,
-            JavaValueVec::from_vec(params.to_vec()),
-        )
+        let (method_class, method) =
+            match self.jvm.classpath.get_method(InvokeType::Static, class, method_name, method_descriptor) {
+                Some(method) => method,
+                None => {
+                    return Err(self.jvm.throw_exception(
+                        "java/lang/NoSuchMethodError",
+                        Some(&format!("{}.{}{}", class_name, method_name, method_descriptor)),
+                    ))
+                }
+            };
+        self.invoke_method(method_class, method, JavaValueVec::from_vec(params.to_vec()))
     }
 
     pub fn invoke_instance_method(
@@ -267,10 +223,7 @@ impl<'a> JniEnv<'a> {
         let class_name = match invoke_type {
             InvokeType::Virtual => {
                 let heap = self.jvm.heap.borrow();
-                let obj = heap
-                    .object_heap_map
-                    .get(&instance_id)
-                    .expect("invalid object ref");
+                let obj = heap.object_heap_map.get(&instance_id).expect("invalid object ref");
                 let class = &heap.loaded_classes[obj.class_id];
                 class.java_type.clone()
             }
@@ -279,19 +232,12 @@ impl<'a> JniEnv<'a> {
         };
         let class = self.get_class_file(&class_name);
         let (method_class, method) =
-            match self
-                .jvm
-                .classpath
-                .get_method(invoke_type, class, method_name, method_descriptor)
-            {
+            match self.jvm.classpath.get_method(invoke_type, class, method_name, method_descriptor) {
                 Some(method) => method,
                 None => {
                     return Err(self.jvm.throw_exception(
                         "java/lang/NoSuchMethodError",
-                        Some(&format!(
-                            "{}.{}{}",
-                            class_name, method_name, method_descriptor
-                        )),
+                        Some(&format!("{}.{}{}", class_name, method_name, method_descriptor)),
                     ))
                 }
             };
@@ -302,11 +248,7 @@ impl<'a> JniEnv<'a> {
             params_with_instance.push(val.clone());
         }
 
-        self.invoke_method(
-            method_class,
-            method,
-            JavaValueVec::from_vec(params_with_instance),
-        )
+        self.invoke_method(method_class, method, JavaValueVec::from_vec(params_with_instance))
     }
 
     pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
@@ -314,21 +256,14 @@ impl<'a> JniEnv<'a> {
     }
 
     pub fn get_current_instance(&self) -> usize {
-        self.parameters[0]
-            .as_object()
-            .expect("expecting object parameter")
-            .unwrap()
+        self.parameters[0].as_object().expect("expecting object parameter").unwrap()
     }
 
     pub fn get_class_file(&self, class_name: &str) -> &ClassFile {
-        self.jvm
-            .classpath
-            .get_classpath_entry(&class_name)
-            .unwrap_or_else(|| {
-                self.jvm
-                    .throw_exception("java/lang/NoClassDefError", Some(&class_name));
-                panic!();
-            })
+        self.jvm.classpath.get_classpath_entry(&class_name).unwrap_or_else(|| {
+            self.jvm.throw_exception("java/lang/NoClassDefError", Some(&class_name));
+            panic!();
+        })
     }
 }
 
@@ -350,13 +285,8 @@ pub fn initialize(jvm: &Jvm) {
     };
     jvm.push_call_stack_frame(virtual_frame);
 
-    let required_classes = vec![
-        "java/lang/Object",
-        "java/lang/String",
-        "java/lang/Class",
-        "java/lang/Cloneable",
-        "java/io/Serializable",
-    ];
+    let required_classes =
+        vec!["java/lang/Object", "java/lang/String", "java/lang/Class", "java/lang/Cloneable", "java/io/Serializable"];
     for cls in &required_classes {
         jvm.ensure_class_loaded(cls, true).unwrap();
     }
@@ -376,16 +306,8 @@ pub fn initialize(jvm: &Jvm) {
         .unwrap();
 
         let main_thread = env.new_instance("java/lang/Thread");
-        env.set_field(
-            main_thread,
-            "name",
-            JavaValue::Object(Some(env.new_string("main"))),
-        );
-        env.set_field(
-            main_thread,
-            "group",
-            JavaValue::Object(Some(system_thread_group)),
-        );
+        env.set_field(main_thread, "name", JavaValue::Object(Some(env.new_string("main"))));
+        env.set_field(main_thread, "group", JavaValue::Object(Some(system_thread_group)));
         env.set_field(main_thread, "priority", JavaValue::Int(5));
         let mut heap = jvm.heap.borrow_mut();
         heap.main_thread_object = main_thread;
@@ -416,6 +338,5 @@ pub fn initialize(jvm: &Jvm) {
     // let system_class = &mut heap.loaded_classes[system_id];
     // system_class.set_static_field("out", JavaValue::Object(Some(stdout)));
 
-    env.invoke_static_method("java/lang/System", "initializeSystemClass", "()V", &[])
-        .unwrap();
+    env.invoke_static_method("java/lang/System", "initializeSystemClass", "()V", &[]).unwrap();
 }

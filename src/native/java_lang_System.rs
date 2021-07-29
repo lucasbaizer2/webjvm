@@ -57,6 +57,8 @@ fn Java_java_lang_System_initProperties(env: &JniEnv) -> RuntimeResult<Option<Ja
         ("user.home", "/dev/null"),
         ("user.dir", "/dev/null"),
         ("sun.nio.PageAlignDirectMemory", "false"),
+        ("sun.stdout.encoding", "UTF-8"),
+        ("sun.stderr.encoding", "UTF-8"),
     ];
 
     let prop_map = env.parameters[0].as_object().unwrap().unwrap();
@@ -69,10 +71,7 @@ fn Java_java_lang_System_initProperties(env: &JniEnv) -> RuntimeResult<Option<Ja
             "java/util/Properties",
             "setProperty",
             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
-            &[
-                JavaValue::Object(Some(key_str)),
-                JavaValue::Object(Some(value_str)),
-            ],
+            &[JavaValue::Object(Some(key_str)), JavaValue::Object(Some(value_str))],
         )?;
     }
 

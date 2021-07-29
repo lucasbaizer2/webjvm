@@ -1,4 +1,7 @@
-use crate::{Classpath, JniEnv, NativeMethod, model::{JavaValue, RuntimeResult}};
+use crate::{
+    model::{JavaValue, RuntimeResult},
+    Classpath, JniEnv, NativeMethod,
+};
 
 pub struct RustMethod {
     pub name: String,
@@ -32,26 +35,26 @@ pub mod java_lang_Class;
 #[allow(non_snake_case)]
 pub mod java_lang_ClassLoader;
 #[allow(non_snake_case)]
+pub mod java_lang_Double;
+#[allow(non_snake_case)]
+pub mod java_lang_Float;
+#[allow(non_snake_case)]
 pub mod java_lang_Object;
 #[allow(non_snake_case)]
 pub mod java_lang_String;
 #[allow(non_snake_case)]
 pub mod java_lang_System;
 #[allow(non_snake_case)]
-pub mod java_lang_Float;
-#[allow(non_snake_case)]
-pub mod java_lang_Double;
-#[allow(non_snake_case)]
 pub mod java_lang_Thread;
 #[allow(non_snake_case)]
 pub mod java_lang_Throwable;
 
 #[allow(non_snake_case)]
+pub mod java_io_FileDescriptor;
+#[allow(non_snake_case)]
 pub mod java_io_FileInputStream;
 #[allow(non_snake_case)]
 pub mod java_io_FileOutputStream;
-#[allow(non_snake_case)]
-pub mod java_io_FileDescriptor;
 
 #[allow(non_snake_case)]
 pub mod java_security_AccessController;
@@ -63,6 +66,8 @@ pub mod sun_misc_VM;
 
 #[allow(non_snake_case)]
 pub mod sun_reflect_Reflection;
+#[allow(non_snake_case)]
+pub mod sun_reflect_NativeConstructorAccessorImpl;
 
 pub fn initialize(cp: &mut Classpath) {
     java_lang_Object::initialize(cp);
@@ -78,11 +83,12 @@ pub fn initialize(cp: &mut Classpath) {
     java_io_FileInputStream::initialize(cp);
     java_io_FileOutputStream::initialize(cp);
     java_io_FileDescriptor::initialize(cp);
-    
+
     java_security_AccessController::initialize(cp);
 
     sun_misc_Unsafe::initialize(cp);
     sun_misc_VM::initialize(cp);
-    
+
     sun_reflect_Reflection::initialize(cp);
+    sun_reflect_NativeConstructorAccessorImpl::initialize(cp);
 }

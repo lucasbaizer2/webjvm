@@ -5,7 +5,10 @@ pub static mut PERMIT_LOGGING: bool = false;
 pub fn log(str: &str) {
     unsafe {
         if PERMIT_LOGGING {
+            #[cfg(target_arch = "wasm32")]
             web_sys::console::log_1(&str.into());
+            #[cfg(not(target_arch = "wasm32"))]
+            println!("{}", str);
         }
     }
 }
@@ -13,7 +16,10 @@ pub fn log(str: &str) {
 pub fn log_error(str: &str) {
     #[allow(unused_unsafe)]
     unsafe {
+        #[cfg(target_arch = "wasm32")]
         web_sys::console::error_1(&str.into());
+        #[cfg(not(target_arch = "wasm32"))]
+        println!("{}", str);
     }
 }
 
@@ -22,17 +28,11 @@ pub fn get_constant_string(const_pool: &Vec<ConstantInfo>, constant_index: u16) 
         ConstantInfo::Utf8(str) => &str.utf8_string,
         ConstantInfo::Class(cls) => get_constant_string(const_pool, cls.name_index),
         ConstantInfo::String(str) => get_constant_string(const_pool, str.string_index),
-        x => panic!(
-            "no string defined for constant info: {:?} with constant index: {}",
-            x, constant_index
-        ),
+        x => panic!("no string defined for constant info: {:?} with constant index: {}", x, constant_index),
     }
 }
 
-pub fn get_constant_name_and_type(
-    const_pool: &Vec<ConstantInfo>,
-    name_and_type_index: u16,
-) -> (&String, &String) {
+pub fn get_constant_name_and_type(const_pool: &Vec<ConstantInfo>, name_and_type_index: u16) -> (&String, &String) {
     match &const_pool[name_and_type_index as usize - 1] {
         ConstantInfo::NameAndType(nat) => (
             match &const_pool[nat.name_index as usize - 1] {

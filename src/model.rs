@@ -5,7 +5,7 @@ use std::{
 
 use crate::exec::jvm::Jvm;
 use classfile_parser::{
-    attribute_info::CodeAttribute, code_attribute::Instruction, method_info::MethodAccessFlags,
+    attribute_info::CodeAttribute, code_attribute::Instruction, method_info::MethodAccessFlags, ClassAccessFlags,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -110,7 +110,7 @@ impl JavaValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum JavaArrayType {
     Byte,
     Short,
@@ -159,15 +159,16 @@ impl JavaObject {
     }
 
     pub fn set_internal_metadata(&mut self, name: &str, value: &str) {
-        self.internal_metadata
-            .insert(String::from(name), String::from(value));
+        self.internal_metadata.insert(String::from(name), String::from(value));
     }
 }
 
 #[derive(Debug)]
 pub struct JavaClass {
     pub java_type: String,
-    pub superclass_id: usize,
+    pub access_flags: ClassAccessFlags,
+    pub class_id: usize,
+    pub superclass_id: Option<usize>,
     pub direct_interfaces: Vec<String>,
     pub is_array_type: bool,
     pub is_primitive_type: bool,
@@ -177,16 +178,43 @@ pub struct JavaClass {
 }
 
 impl JavaClass {
-    pub fn set_static_field(&mut self, name: &str, val: JavaValue) {
-        if !self.static_fields.contains_key(name) {
-            panic!("NoSuchFieldError: {}", name);
-        }
+    fn get_static_field_declarer(jvm: &Jvm, root_class: &str, name: &str) -> RuntimeResult<usize> {
+        jvm.ensure_class_loaded(root_class, true)?;
 
-        self.static_fields.insert(String::from(name), val);
+        let heap = jvm.heap.borrow();
+        let mut current_class = &heap.loaded_classes[heap.loaded_classes_lookup[root_class]];
+        loop {
+            if current_class.static_fields.contains_key(name) {
+                return Ok(current_class.class_id);
+            }
+
+            match current_class.superclass_id {
+                Some(id) => current_class = &heap.loaded_classes[id],
+                None => {
+                    return Err(
+                        jvm.throw_exception("java/lang/NoSuchFieldError", Some(&format!("{}.{}", root_class, name)))
+                    )
+                }
+            }
+        }
     }
 
-    pub fn get_static_field(&mut self, name: &str) -> &JavaValue {
-        self.static_fields.get(name).expect("NoSuchFieldError")
+    pub fn set_static_field(jvm: &Jvm, root_class: &str, name: &str, val: JavaValue) -> RuntimeResult<()> {
+        let declarer = JavaClass::get_static_field_declarer(jvm, root_class, name)?;
+
+        let mut heap = jvm.heap.borrow_mut();
+        let loaded_class = &mut heap.loaded_classes[declarer];
+        loaded_class.static_fields.insert(String::from(name), val);
+
+        Ok(())
+    }
+
+    pub fn get_static_field(jvm: &Jvm, root_class: &str, name: &str) -> RuntimeResult<JavaValue> {
+        let declarer = JavaClass::get_static_field_declarer(jvm, root_class, name)?;
+
+        let mut heap = jvm.heap.borrow_mut();
+        let loaded_class = &mut heap.loaded_classes[declarer];
+        Ok(loaded_class.static_fields.get(name).unwrap().clone())
     }
 }
 
@@ -222,7 +250,9 @@ impl IndexMut<usize> for JavaValueVec {
 
 impl JavaValueVec {
     pub fn new() -> JavaValueVec {
-        JavaValueVec { vec: Vec::new() }
+        JavaValueVec {
+            vec: Vec::new(),
+        }
     }
 
     pub fn with_capacity(capacity: usize) -> JavaValueVec {
@@ -232,7 +262,9 @@ impl JavaValueVec {
     }
 
     pub fn from_vec(vec: Vec<JavaValue>) -> JavaValueVec {
-        JavaValueVec { vec }
+        JavaValueVec {
+            vec,
+        }
     }
 
     pub fn push_exact(&mut self, val: JavaValue) {
@@ -264,7 +296,10 @@ impl JavaValueVec {
         let popped = self.vec.pop();
         match popped {
             Some(ret) => match ret {
-                JavaValue::Internal { is_higher_bits, .. } => {
+                JavaValue::Internal {
+                    is_higher_bits,
+                    ..
+                } => {
                     if is_higher_bits {
                         self.vec.pop()
                     } else {
@@ -284,7 +319,10 @@ impl JavaValueVec {
     pub fn last_full(&self) -> Option<&JavaValue> {
         match self.vec.last() {
             Some(val) => match val {
-                JavaValue::Internal { is_higher_bits, .. } => {
+                JavaValue::Internal {
+                    is_higher_bits,
+                    ..
+                } => {
                     if *is_higher_bits {
                         self.vec.get(self.vec.len() - 2)
                     } else {
