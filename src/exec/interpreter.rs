@@ -1,11 +1,11 @@
-use crate::util;
 use crate::{exec::jvm::*, model::*, StackTraceElement};
-use crate::{java::MethodDescriptor, util::*, InvokeType, JniEnv};
+use crate::{util::*, InvokeType, JniEnv};
 use classfile_parser::{
     code_attribute::Instruction,
     constant_info::{ConstantInfo, MethodRefConstant},
 };
 use std::cell::RefCell;
+use std::num::Wrapping;
 
 pub struct InstructionExecutor {
     instruction_count: RefCell<u64>,
@@ -320,17 +320,17 @@ impl InstructionExecutor {
 
         macro_rules! eval_imath {
             ( $op:tt ) => {{
-                let rhs = pop!().as_int().expect("expecting integral value");
-                let lhs = pop!().as_int().expect("expecting integral value");
-                state.stack.push(JavaValue::Int(lhs $op rhs));
+                let rhs = Wrapping(pop!().as_int().expect("expecting integral value"));
+                let lhs = Wrapping(pop!().as_int().expect("expecting integral value"));
+                state.stack.push(JavaValue::Int((lhs $op rhs).0));
             }}
         }
 
         macro_rules! eval_lmath {
             ( $op:tt ) => {{
-                let rhs = pop_full!().as_long().expect("expecting long value");
-                let lhs = pop_full!().as_long().expect("expecting long value");
-                state.stack.push(JavaValue::Long(lhs $op rhs));
+                let rhs = Wrapping(pop_full!().as_long().expect("expecting long value"));
+                let lhs = Wrapping(pop_full!().as_long().expect("expecting long value"));
+                state.stack.push(JavaValue::Long((lhs $op rhs).0));
             }}
         }
 
@@ -345,7 +345,7 @@ impl InstructionExecutor {
         let expected_offset = state.instruction_offset;
 
         match &insn.1 {
-            Instruction::Aaload | Instruction::Caload | Instruction::Iaload => {
+            Instruction::Aaload | Instruction::Caload | Instruction::Iaload | Instruction::Baload => {
                 let index = pop!().as_int().expect("invalid array index");
                 let arrayref_id = pop!().as_array().expect("invalid array instance ID");
 
@@ -362,7 +362,7 @@ impl InstructionExecutor {
                     state.stack.push(val);
                 }
             }
-            Instruction::Aastore | Instruction::Castore | Instruction::Iastore => {
+            Instruction::Aastore | Instruction::Castore | Instruction::Iastore | Instruction::Bastore => {
                 let value = pop!();
                 let index = pop!().as_int().expect("invalid array index");
                 let arrayref_id = pop!().as_array().expect("invalid array instance ID");
@@ -530,6 +530,10 @@ impl InstructionExecutor {
                     }
                     x => panic!("bad field ref: {:?}", x),
                 }
+            }
+            Instruction::I2b => {
+                let int = pop!().as_int().expect("expecting integral value");
+                state.stack.push(JavaValue::Byte(int as i8));
             }
             Instruction::I2c => {
                 let int = pop!().as_int().expect("expecting integral value");
@@ -727,8 +731,28 @@ impl InstructionExecutor {
             Instruction::Irem => eval_imath!(%),
             Instruction::Isub => eval_imath!(-),
             Instruction::Ixor => eval_imath!(^),
+            Instruction::L2i => {
+                let long = pop_full!().as_long().expect("expecting long value");
+                state.stack.push(JavaValue::Int(long as i32));
+            }
             Instruction::Lconst0 => state.stack.push(JavaValue::Long(0)),
             Instruction::Lconst1 => state.stack.push(JavaValue::Long(1)),
+            Instruction::Lcmp => {
+                let rhs = state.stack.pop_full().expect("stack underflow").as_long();
+                let lhs = state.stack.pop_full().expect("stack underflow").as_long();
+                if lhs > rhs {
+                    state.stack.push(JavaValue::Int(1));
+                } else if lhs == rhs {
+                    state.stack.push(JavaValue::Int(-1));
+                } else {
+                    state.stack.push(JavaValue::Int(0));
+                }
+            }
+            Instruction::Lstore(register) => state.lvt[*register as usize] = pop_full!(),
+            Instruction::Lstore0 => state.lvt[0] = pop_full!(),
+            Instruction::Lstore1 => state.lvt[1] = pop_full!(),
+            Instruction::Lstore2 => state.lvt[2] = pop_full!(),
+            Instruction::Lstore3 => state.lvt[3] = pop_full!(),
             Instruction::Ladd => eval_lmath!(+),
             Instruction::Land => eval_lmath!(&),
             Instruction::Ldiv => eval_lmath!(/),

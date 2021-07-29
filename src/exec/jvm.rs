@@ -1,5 +1,5 @@
 use crate::model::*;
-use crate::{java::MethodDescriptor, util::*, Classpath, InvokeType, JniEnv};
+use crate::{util::*, Classpath, InvokeType, JniEnv};
 use classfile_parser::ClassAccessFlags;
 use classfile_parser::{
     attribute_info::code_attribute_parser,
@@ -45,15 +45,8 @@ impl Jvm {
             get_constant_string(&cls.const_pool, method.name_index).clone() + container_method_descriptor;
 
         if method.access_flags.contains(MethodAccessFlags::NATIVE) {
-            // let parameters_info = method
-            //     .attributes
-            //     .iter()
-            //     .find(|attribute| {
-            //         get_constant_string(&cls.const_pool, attribute.attribute_name_index)
-            //             == "MethodParameters"
-            //     })
-            //     .expect("missing MethodParameters");
-            // let (_, mp) = method_parameters_attribute_parser(&parameters_info.info).unwrap();
+            let container_class = container_class.replace("$", "_00024");
+
             let md = MethodDescriptor::new(container_method_descriptor).expect("bad method descriptor");
             let mut lvt_len = md
                 .argument_types
@@ -366,7 +359,16 @@ impl Jvm {
             cls.java_type.clone()
         };
 
-        return self.throw_exception(&exception_class, None);
+        let detail_str = {
+            let env = JniEnv::empty(self);
+            let detail_field = env.get_field(reference, "detailMessage");
+
+            match detail_field.as_object().unwrap() {
+                Some(id) => Some(env.get_string(id)),
+                _ => None,
+            }
+        };
+        return self.throw_exception(&exception_class, detail_str.as_deref());
 
         {
             let env = JniEnv::empty(self);

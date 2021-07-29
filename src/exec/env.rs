@@ -1,5 +1,11 @@
 use super::jvm::Jvm;
-use crate::{InvokeType, StackTraceElement, model::{CallStackFrame, CallStackFrameState, JavaArrayType, JavaClass, JavaThrowable, JavaValue, JavaValueVec, RuntimeResult}};
+use crate::{
+    model::{
+        CallStackFrame, CallStackFrameState, JavaArrayType, JavaClass, JavaThrowable, JavaValue, JavaValueVec,
+        RuntimeResult,
+    },
+    InvokeType, StackTraceElement,
+};
 use classfile_parser::{
     method_info::{MethodAccessFlags, MethodInfo},
     ClassFile,
@@ -143,6 +149,12 @@ impl<'a> JniEnv<'a> {
         let mut heap = self.jvm.heap.borrow_mut();
         let obj = heap.object_heap_map.get_mut(&instance_id).expect("invalid instance ID");
         obj.set_internal_metadata(field_name, value);
+    }
+
+    pub fn remove_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<String> {
+        let mut heap = self.jvm.heap.borrow_mut();
+        let obj = heap.object_heap_map.get_mut(&instance_id).expect("invalid instance ID");
+        obj.remove_internal_metadata(field_name)
     }
 
     pub fn get_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<String> {

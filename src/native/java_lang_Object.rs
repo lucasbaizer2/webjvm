@@ -52,12 +52,18 @@ fn Java_java_lang_Object_clone(env: &JniEnv) -> RuntimeResult<Option<JavaValue>>
     }
 }
 
+#[allow(non_snake_case)]
+fn Java_java_lang_Object_notifyAll(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    Ok(None)
+}
+
 pub fn initialize(cp: &mut Classpath) {
     register_jni!(
         cp,
         Java_java_lang_Object_registerNatives,
         Java_java_lang_Object_hashCode,
         Java_java_lang_Object_getClass,
-        Java_java_lang_Object_clone
+        Java_java_lang_Object_clone,
+        Java_java_lang_Object_notifyAll
     );
 }

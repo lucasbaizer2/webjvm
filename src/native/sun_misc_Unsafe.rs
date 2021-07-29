@@ -2,7 +2,6 @@ use std::mem::size_of;
 
 use crate::{
     model::{JavaValue, RuntimeResult},
-    util::log,
     Classpath, InvokeType, JniEnv,
 };
 
@@ -10,8 +9,6 @@ const ADDRESS_SIZE: i32 = size_of::<usize>() as i32;
 
 #[allow(non_snake_case)]
 fn Java_sun_misc_Unsafe_registerNatives(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    log("Registered Unsafe natives!");
-
     Ok(None)
 }
 
@@ -118,6 +115,53 @@ fn Java_sun_misc_Unsafe_getIntVolatile(env: &JniEnv) -> RuntimeResult<Option<Jav
     Ok(Some(current_field))
 }
 
+#[allow(non_snake_case)]
+fn Java_sun_misc_Unsafe_allocateMemory(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let instance = env.get_current_instance();
+    let block_size = env.parameters[1].as_long().unwrap();
+    let mut buf: Vec<u8> = Vec::with_capacity(block_size as usize);
+    let ptr = buf.as_mut_ptr();
+
+    std::mem::forget(buf);
+
+    env.set_internal_metadata(instance, &(ptr as i64).to_string(), &block_size.to_string());
+
+    Ok(Some(JavaValue::Long(ptr as i64)))
+}
+
+#[allow(non_snake_case)]
+fn Java_sun_misc_Unsafe_freeMemory(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let instance = env.get_current_instance();
+    let address = env.parameters[1].as_long().unwrap() as *mut u8;
+    let block_size: i64 =
+        env.remove_internal_metadata(instance, &(address as i64).to_string()).unwrap().parse().unwrap();
+
+    unsafe {
+        let data = Vec::from_raw_parts(address, block_size as usize, block_size as usize);
+        std::mem::drop(data);
+    }
+
+    Ok(None)
+}
+
+#[allow(non_snake_case)]
+fn Java_sun_misc_Unsafe_getByte(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let address = env.parameters[1].as_long().unwrap() as *mut i8;
+    let value = unsafe { std::ptr::read(address) };
+
+    Ok(Some(JavaValue::Byte(value)))
+}
+
+#[allow(non_snake_case)]
+fn Java_sun_misc_Unsafe_putLong(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let address = env.parameters[1].as_long().unwrap() as *mut i64;
+    let value = env.parameters[3].as_long().unwrap();
+
+    unsafe { std::ptr::write(address, value) };
+
+    Ok(None)
+}
+
 pub fn initialize(cp: &mut Classpath) {
     register_jni!(
         cp,
@@ -128,6 +172,10 @@ pub fn initialize(cp: &mut Classpath) {
         Java_sun_misc_Unsafe_objectFieldOffset,
         Java_sun_misc_Unsafe_compareAndSwapObject,
         Java_sun_misc_Unsafe_compareAndSwapInt,
-        Java_sun_misc_Unsafe_getIntVolatile
+        Java_sun_misc_Unsafe_getIntVolatile,
+        Java_sun_misc_Unsafe_allocateMemory,
+        Java_sun_misc_Unsafe_freeMemory,
+        Java_sun_misc_Unsafe_putLong,
+        Java_sun_misc_Unsafe_getByte
     );
 }

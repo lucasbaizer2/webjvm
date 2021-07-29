@@ -1,0 +1,7 @@
+*.rs text eol=lf
+*.lock text eol=lf
+*.toml text eol=lf
+*.html text eol=lf
+
+*.jar binary
+*.class binary

@@ -31,43 +31,50 @@ macro_rules! register_jni {
 }
 
 #[allow(non_snake_case)]
-pub mod java_lang_Class;
+mod java_lang_Class;
 #[allow(non_snake_case)]
-pub mod java_lang_ClassLoader;
+mod java_lang_ClassLoader;
 #[allow(non_snake_case)]
-pub mod java_lang_Double;
+mod java_lang_Double;
 #[allow(non_snake_case)]
-pub mod java_lang_Float;
+mod java_lang_Float;
 #[allow(non_snake_case)]
-pub mod java_lang_Object;
+mod java_lang_Object;
 #[allow(non_snake_case)]
-pub mod java_lang_String;
+mod java_lang_String;
 #[allow(non_snake_case)]
-pub mod java_lang_System;
+mod java_lang_System;
 #[allow(non_snake_case)]
-pub mod java_lang_Thread;
+mod java_lang_Thread;
 #[allow(non_snake_case)]
-pub mod java_lang_Throwable;
+mod java_lang_Throwable;
 
 #[allow(non_snake_case)]
-pub mod java_io_FileDescriptor;
+mod java_io_FileDescriptor;
 #[allow(non_snake_case)]
-pub mod java_io_FileInputStream;
+mod java_io_FileInputStream;
 #[allow(non_snake_case)]
-pub mod java_io_FileOutputStream;
+mod java_io_FileOutputStream;
+#[allow(non_snake_case)]
+mod java_io_UnixFileSystem;
 
 #[allow(non_snake_case)]
-pub mod java_security_AccessController;
+mod java_security_AccessController;
 
 #[allow(non_snake_case)]
-pub mod sun_misc_Unsafe;
-#[allow(non_snake_case)]
-pub mod sun_misc_VM;
+mod java_util_concurrent_atomic_AtomicLong;
 
 #[allow(non_snake_case)]
-pub mod sun_reflect_Reflection;
+mod sun_misc_Signal;
 #[allow(non_snake_case)]
-pub mod sun_reflect_NativeConstructorAccessorImpl;
+mod sun_misc_Unsafe;
+#[allow(non_snake_case)]
+mod sun_misc_VM;
+
+#[allow(non_snake_case)]
+mod sun_reflect_NativeConstructorAccessorImpl;
+#[allow(non_snake_case)]
+mod sun_reflect_Reflection;
 
 pub fn initialize(cp: &mut Classpath) {
     java_lang_Object::initialize(cp);
@@ -83,11 +90,15 @@ pub fn initialize(cp: &mut Classpath) {
     java_io_FileInputStream::initialize(cp);
     java_io_FileOutputStream::initialize(cp);
     java_io_FileDescriptor::initialize(cp);
+    java_io_UnixFileSystem::initialize(cp);
 
     java_security_AccessController::initialize(cp);
 
+    java_util_concurrent_atomic_AtomicLong::initialize(cp);
+
     sun_misc_Unsafe::initialize(cp);
     sun_misc_VM::initialize(cp);
+    sun_misc_Signal::initialize(cp);
 
     sun_reflect_Reflection::initialize(cp);
     sun_reflect_NativeConstructorAccessorImpl::initialize(cp);

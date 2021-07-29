@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::{
     model::{JavaValue, RuntimeResult},
     util::log,
@@ -13,8 +15,11 @@ fn Java_java_lang_System_registerNatives(_: &JniEnv) -> RuntimeResult<Option<Jav
 
 #[allow(non_snake_case)]
 fn Java_java_lang_System_currentTimeMillis(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let now = js_sys::Date::now();
-    Ok(Some(JavaValue::Long(now as i64)))
+    #[cfg(target_arch = "wasm32")]
+    return Ok(Some(JavaValue::Long(js_sys::Date::now() as i64)));
+
+    #[cfg(not(target_arch = "wasm32"))]
+    return Ok(Some(JavaValue::Long(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64)));
 }
 
 #[allow(non_snake_case)]
@@ -86,6 +91,31 @@ fn Java_java_lang_System_setIn0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>
     Ok(None)
 }
 
+#[allow(non_snake_case)]
+fn Java_java_lang_System_setOut0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let stdout = env.parameters[0].clone();
+    env.set_static_field("java/lang/System", "out", stdout);
+
+    Ok(None)
+}
+
+#[allow(non_snake_case)]
+fn Java_java_lang_System_setErr0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let stderr = env.parameters[0].clone();
+    env.set_static_field("java/lang/System", "err", stderr);
+
+    Ok(None)
+}
+
+#[allow(non_snake_case)]
+fn Java_java_lang_System_mapLibraryName(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let library_name = env.get_string(env.parameters[0].as_object().unwrap().unwrap());
+    let linux_style = format!("lib{}.so", library_name);
+    let java_str = env.new_string(&linux_style);
+
+    Ok(Some(JavaValue::Object(Some(java_str))))
+}
+
 pub fn initialize(cp: &mut Classpath) {
     register_jni!(
         cp,
@@ -94,6 +124,9 @@ pub fn initialize(cp: &mut Classpath) {
         Java_java_lang_System_nanoTime,
         Java_java_lang_System_initProperties,
         Java_java_lang_System_arraycopy,
-        Java_java_lang_System_setIn0
+        Java_java_lang_System_setIn0,
+        Java_java_lang_System_setOut0,
+        Java_java_lang_System_setErr0,
+        Java_java_lang_System_mapLibraryName
     );
 }

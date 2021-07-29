@@ -4,8 +4,6 @@ version = "0.1.0"
 authors = ["Lucas Baizer <lucas.baizer@telaeris.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 classfile-parser = { path = "../classfile-parser" }
 wasm-bindgen = "0.2"

@@ -1,8 +1,7 @@
 use classfile_parser::ClassAccessFlags;
 
 use crate::{
-    java::MethodDescriptor,
-    model::{JavaArrayType, JavaValue, RuntimeResult},
+    model::{JavaArrayType, JavaValue, MethodDescriptor, RuntimeResult},
     util::get_constant_string,
     Classpath, JniEnv,
 };

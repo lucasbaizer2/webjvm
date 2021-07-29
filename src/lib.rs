@@ -1,7 +1,6 @@
 #![feature(label_break_value)]
 
 pub mod exec;
-pub mod java;
 pub mod model;
 pub mod native;
 pub mod util;
@@ -335,7 +334,7 @@ mod tests {
 
         // await init();
         // console.log('Called init, downloading content....');
-    
+
         // const stdlib = await fetch('./java/skinny-stdlib.jar');
         // const webjvm = await fetch('./java/webjvm-stdlib.jar');
         // const cls = await fetch('./java/MainTest.class');
