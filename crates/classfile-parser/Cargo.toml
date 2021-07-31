@@ -1,0 +1,16 @@
+[package]
+name = "classfile-parser"
+description = "A parser for Java Class files written in rust"
+version = "0.3.6"
+authors = ["Nick Palmer <nick@palmr.co.uk>"]
+keywords = ["java", "parsing", "class", "classfile"]
+categories = ["parser-implementations"]
+repository = "https://github.com/Palmr/classfile-parser"
+readme = "README.md"
+license = "MIT"
+exclude = [".idea/**/*", "classfile-parser.iml", "java-assets/out/**/*"]
+
+[dependencies]
+nom = "^4.1"
+bitflags = "^1.2"
+cesu8 = "^1.1"
