@@ -3,7 +3,6 @@ use crate::{util::*, Classpath, InvokeType, JniEnv};
 use classfile_parser::ClassAccessFlags;
 use classfile_parser::{
     attribute_info::code_attribute_parser,
-    code_attribute::code_parser,
     field_info::{FieldAccessFlags, FieldInfo},
     method_info::{MethodAccessFlags, MethodInfo},
     ClassFile,
@@ -36,6 +35,28 @@ impl Jvm {
                 main_thread_object: 0,
             }),
         }
+    }
+
+    pub fn is_instance_of(&self, val: &JavaValue, compare_type: &str) -> RuntimeResult<bool> {
+        let res = match val {
+            JavaValue::Object(instance) => match instance {
+                Some(instance_id) => {
+                    let current_class = {
+                        let heap = self.heap.borrow();
+                        let obj = heap.object_heap_map.get(&instance_id).expect("bad object ref");
+                        heap.loaded_classes[obj.class_id].java_type.clone()
+                    };
+                    self.is_assignable_from(compare_type, &current_class)?
+                }
+                None => true,
+            },
+            JavaValue::Array(_) => {
+                // TODO
+                true
+            }
+            _ => panic!("invalid object"),
+        };
+        Ok(res)
     }
 
     pub fn create_stack_frame(&self, cls: &ClassFile, method: &MethodInfo) -> RuntimeResult<CallStackFrame> {
@@ -89,11 +110,7 @@ impl Jvm {
             ));
         } else {
             let (_, code_attribute) = code_attribute_parser(&method.attributes[0].info).unwrap();
-            let (_, instructions) = code_parser(&code_attribute.code).expect("error parsing method instructions");
-            log(&format!(
-                "Creating new stack frame at {}.{} with instructions: {:?}",
-                container_class, container_method, instructions
-            ));
+            let instructions = code_attribute.code.clone();
 
             Ok(CallStackFrame {
                 container_class,
@@ -473,6 +490,10 @@ impl Jvm {
                     if top_frame.state.instruction_offset >= exception_item.start_pc as usize
                         && top_frame.state.instruction_offset <= exception_item.end_pc as usize
                     {
+                        if exception_item.catch_type == 0 {
+                            // TODO: finally blocks
+                            return JavaThrowable::Unhandled(0);
+                        }
                         let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
                         let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
                         // TODO: make this polymorphic

@@ -4,9 +4,7 @@ use std::{
 };
 
 use crate::exec::jvm::Jvm;
-use classfile_parser::{
-    attribute_info::CodeAttribute, code_attribute::Instruction, method_info::MethodAccessFlags, ClassAccessFlags,
-};
+use classfile_parser::{attribute_info::CodeAttribute, method_info::MethodAccessFlags, ClassAccessFlags};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JavaValue {
@@ -236,7 +234,7 @@ pub struct CallStackFrame {
     pub is_native_frame: bool,
     pub access_flags: MethodAccessFlags,
     pub metadata: Option<CodeAttribute>,
-    pub instructions: Vec<(usize, Instruction)>,
+    pub instructions: Vec<u8>,
     pub state: CallStackFrameState,
 }
 
@@ -264,6 +262,25 @@ impl JavaValueVec {
         JavaValueVec {
             vec: Vec::new(),
         }
+    }
+
+    pub fn jvm_debug(&self, jvm: &Jvm) -> String {
+        let string_values: Vec<String> = self
+            .vec
+            .iter()
+            .map(|val| match val {
+                JavaValue::Object(inner) => match inner {
+                    Some(id) => {
+                        let heap = jvm.heap.borrow();
+                        let cid = heap.object_heap_map[id].class_id;
+                        heap.loaded_classes[cid].java_type.clone()
+                    }
+                    None => String::from("null"),
+                },
+                other => format!("{:?}", other),
+            })
+            .collect();
+        format!("{:?}", string_values)
     }
 
     pub fn with_capacity(capacity: usize) -> JavaValueVec {
@@ -346,29 +363,6 @@ impl JavaValueVec {
         }
     }
 
-    // pub fn get_index(&self, index: usize) -> &JavaValue {
-    //     let mut count = 0;
-    //     for val in &self.vec {
-    //         if count == index {
-    //             return self.vec.get(count).unwrap();
-    //         }
-
-    //         let v: Vec<String> = Vec::new();
-    //         let x = v[0];
-
-    //         match val {
-    //             JavaValue::Internal { is_higher_bits, .. } => {
-    //                 if !is_higher_bits {
-    //                     count += 1;
-    //                 }
-    //             }
-    //             _ => count += 1,
-    //         }
-    //     }
-
-    //     panic!("out of bounds");
-    // }
-
     pub fn insert(&mut self, index: usize, element: JavaValue) {
         self.vec.insert(index, element);
     }
@@ -446,12 +440,9 @@ impl MethodDescriptor {
 
     pub fn new(desc: &str) -> Result<MethodDescriptor, ()> {
         let chars: Vec<char> = desc.chars().collect();
-        if chars[0] != '(' {
-            return Err(());
-        }
-
+        let open_paren = chars.iter().position(|ch| *ch == '(').unwrap();
         let mut argument_types = Vec::new();
-        let mut offset = 1;
+        let mut offset = open_paren + 1;
         while offset < chars.len() && chars[offset] != ')' {
             let (token, new_offset) = MethodDescriptor::read_token(&chars, offset)?;
             argument_types.push(token);

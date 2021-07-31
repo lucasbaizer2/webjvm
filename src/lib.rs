@@ -1,5 +1,8 @@
 #![feature(label_break_value)]
 
+#[macro_use]
+extern crate lazy_static;
+
 pub mod exec;
 pub mod model;
 pub mod native;
