@@ -27,18 +27,18 @@ fn Java_java_lang_Class_getName0(env: &JniEnv) -> RuntimeResult<Option<JavaValue
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_isArray(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
-    Ok(Some(JavaValue::Boolean(class_name.starts_with("["))))
+    Ok(Some(JavaValue::Boolean(class_name.starts_with('['))))
 }
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getComponentType(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
-    if !class_name.starts_with("[") {
+    if !class_name.starts_with('[') {
         return Ok(Some(JavaValue::Object(None)));
     }
 
     let mut component_name = &class_name[1..class_name.len()];
-    if component_name.starts_with("L") && component_name.ends_with(";") {
+    if component_name.starts_with('L') && component_name.ends_with(';') {
         component_name = &component_name[1..component_name.len() - 1];
     }
     let component_class_id = env.get_class_id(component_name);
@@ -110,8 +110,7 @@ fn get_declared_methods(env: &JniEnv, constructors: bool) -> usize {
             })
             .count(),
     );
-    for i in 0..methods.len() {
-        let method = &methods[i];
+    for (i, method) in methods.iter().enumerate() {
         let method_name = get_constant_string(&class_file.const_pool, method.name_index);
         if constructors && method_name != "<init>" {
             continue;
@@ -177,8 +176,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
 
     let field_type_id = env.load_class("java/lang/reflect/Field", false);
     let result_array = env.new_array(JavaArrayType::Object(field_type_id), fields.len());
-    for i in 0..fields.len() {
-        let field = &fields[i];
+    for (i, field) in fields.iter().enumerate() {
         let reflected_field = env.new_instance(field_type_id);
         let field_name = env.new_interned_string(get_constant_string(&class_file.const_pool, field.name_index));
         env.set_field(reflected_field, "clazz", JavaValue::Object(Some(env.get_current_instance())));
@@ -186,7 +184,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
         env.set_field(reflected_field, "name", JavaValue::Object(Some(field_name)));
 
         let mut field_type_name = get_constant_string(&class_file.const_pool, field.descriptor_index).as_str();
-        if field_type_name.starts_with("L") && field_type_name.ends_with(";") {
+        if field_type_name.starts_with('L') && field_type_name.ends_with(';') {
             field_type_name = &field_type_name[1..field_type_name.len() - 1];
         }
 
@@ -205,11 +203,8 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
 fn Java_java_lang_Class_isPrimitive(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
 
-    let is_primitive = match class_name.chars().next().unwrap() {
-        'B' | 'S' | 'I' | 'J' | 'F' | 'D' | 'Z' | 'C' | 'V' => true,
-        _ => false,
-    };
-
+    let is_primitive =
+        matches!(class_name.chars().next().unwrap(), 'B' | 'S' | 'I' | 'J' | 'F' | 'D' | 'Z' | 'C' | 'V');
     Ok(Some(JavaValue::Boolean(is_primitive)))
 }
 

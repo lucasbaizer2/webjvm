@@ -2,7 +2,7 @@ use crate::{
     exec::interpreter::InstructionEnvironment,
     model::{CallStackFrameState, JavaValue, RuntimeResult},
 };
-use std::num::Wrapping;
+use std::{cmp::Ordering, num::Wrapping};
 
 macro_rules! define_imath {
     ( $insn:ident, $op:tt ) => {
@@ -137,6 +137,7 @@ pub fn fcmpl(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> 
     compare_floats(env, false)
 }
 
+#[allow(clippy::float_cmp)]
 pub fn compare_floats(mut env: InstructionEnvironment, greater: bool) -> RuntimeResult<CallStackFrameState> {
     let rhs = pop!(&mut env).as_float().expect("expecting float");
     let lhs = pop!(&mut env).as_float().expect("expecting float");
@@ -158,15 +159,14 @@ pub fn compare_floats(mut env: InstructionEnvironment, greater: bool) -> Runtime
 }
 
 pub fn lcmp(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let rhs = pop_full!(&mut env).as_long();
-    let lhs = pop_full!(&mut env).as_long();
-    if lhs > rhs {
-        env.state.stack.push(JavaValue::Int(1));
-    } else if lhs == rhs {
-        env.state.stack.push(JavaValue::Int(-1));
-    } else {
-        env.state.stack.push(JavaValue::Int(0));
-    }
+    let rhs = pop_full!(&mut env).as_long().unwrap();
+    let lhs = pop_full!(&mut env).as_long().unwrap();
+    let val = match lhs.cmp(&rhs) {
+        Ordering::Greater => 1,
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+    };
+    env.state.stack.push(JavaValue::Int(val));
 
     Ok(env.state)
 }

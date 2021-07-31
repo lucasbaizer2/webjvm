@@ -43,7 +43,7 @@ impl Jvm {
                 Some(instance_id) => {
                     let class_id = {
                         let heap = self.heap.borrow();
-                        let obj = heap.object_heap_map.get(&instance_id).expect("bad object ref");
+                        let obj = heap.object_heap_map.get(instance_id).expect("bad object ref");
                         obj.class_id
                     };
                     self.is_assignable_from(compare_type, class_id)?
@@ -81,7 +81,7 @@ impl Jvm {
                 lvt_len += 1;
             }
 
-            return Ok(CallStackFrame {
+            Ok(CallStackFrame {
                 container_class,
                 container_method,
                 access_flags: method.access_flags,
@@ -102,7 +102,7 @@ impl Jvm {
                     return_stack_value: None,
                 },
                 metadata: None,
-            });
+            })
         } else if method.access_flags.contains(MethodAccessFlags::ABSTRACT) {
             return Err(self.throw_exception(
                 "java/lang/AbstractMethodError",
@@ -221,7 +221,7 @@ impl Jvm {
                             let superclass_id = match class_file.super_class {
                                 0 => None,
                                 id => Some(self.ensure_class_loaded(
-                                    &get_constant_string(&class_file.const_pool, id),
+                                    get_constant_string(&class_file.const_pool, id),
                                     initialize,
                                 )?),
                             };
@@ -274,7 +274,7 @@ impl Jvm {
                     id
                 };
 
-                let env = JniEnv::empty(&self);
+                let env = JniEnv::empty(self);
                 // create java.lang.Class object after registering the class
                 let lang_class_id = self.ensure_class_loaded("java/lang/Class", false)?;
                 let class_object_id = env.new_instance(lang_class_id);
@@ -333,7 +333,7 @@ impl Jvm {
             self.initialize_class(superclass_id)?;
         }
 
-        if let Some(_) = self.classpath.get_static_method(class_file, "<clinit>", "()V") {
+        if self.classpath.get_static_method(class_file, "<clinit>", "()V").is_some() {
             {
                 let mut heap = self.heap.borrow_mut();
                 heap.loaded_classes[class_id].is_initialized = true;
@@ -350,7 +350,7 @@ impl Jvm {
         let heap = self.heap.borrow();
         let mut current_class = &heap.loaded_classes[subclass_id];
         Ok('l: loop {
-            if &current_class.java_type == superclass {
+            if current_class.java_type == superclass {
                 break true;
             }
             for interface in &current_class.direct_interfaces {
@@ -388,10 +388,7 @@ impl Jvm {
             let env = JniEnv::empty(self);
             let detail_field = env.get_field(reference, "detailMessage");
 
-            match detail_field.as_object().unwrap() {
-                Some(id) => Some(env.get_string(id)),
-                _ => None,
-            }
+            detail_field.as_object().unwrap().map(|id| env.get_string(id))
         };
         return self.throw_exception(&exception_class, detail_str.as_deref());
 
@@ -525,7 +522,7 @@ impl Jvm {
             log_error(&format!("{}\n{}", exception_class, stacktrace));
         }
 
-        return JavaThrowable::Unhandled(0);
+        JavaThrowable::Unhandled(0)
     }
 
     pub fn new_instance(&self, root_class_id: usize) -> RuntimeResult<JavaObject> {
@@ -537,7 +534,7 @@ impl Jvm {
         };
         loop {
             self.ensure_class_loaded(class_name, true)?;
-            let cls = self.classpath.get_classpath_entry(&class_name).unwrap();
+            let cls = self.classpath.get_classpath_entry(class_name).unwrap();
 
             let declared_fields: Vec<&FieldInfo> =
                 cls.fields.iter().filter(|field| !field.access_flags.contains(FieldAccessFlags::STATIC)).collect();
@@ -625,7 +622,7 @@ impl Jvm {
         let string_class = self.ensure_class_loaded("java/lang/String", true).unwrap();
         let mut instance = self.new_instance(string_class).unwrap();
 
-        let chars: Vec<JavaValue> = inner.encode_utf16().into_iter().map(|c| JavaValue::Char(c)).collect();
+        let chars: Vec<JavaValue> = inner.encode_utf16().into_iter().map(JavaValue::Char).collect();
         let array_id = self.create_constant_array(JavaArrayType::Char, chars);
         instance.set_field(self, "value", JavaValue::Array(array_id)).unwrap();
 

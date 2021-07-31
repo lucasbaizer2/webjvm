@@ -1,4 +1,6 @@
 #![feature(label_break_value)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::result_unit_err)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -99,6 +101,7 @@ impl Classpath {
         }
     }
 
+    #[allow(clippy::borrowed_box)]
     pub fn get_native_method(&self, name: &str) -> Option<&Box<dyn NativeMethod>> {
         self.native_methods.get(name)
     }
@@ -203,7 +206,7 @@ impl Classpath {
     }
 
     pub fn get_main_method(&self) -> Option<(&ClassFile, &MethodInfo)> {
-        let mut classes: Vec<&ClassFile> = self.class_files.values().map(|x| x).collect();
+        let mut classes: Vec<&ClassFile> = self.class_files.values().collect();
         classes.reverse();
 
         for file in classes {

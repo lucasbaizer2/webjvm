@@ -62,17 +62,11 @@ impl JavaValue {
     }
 
     pub fn is_object(&self) -> bool {
-        match self {
-            JavaValue::Object(_) => true,
-            _ => false,
-        }
+        matches!(self, JavaValue::Object(_))
     }
 
     pub fn is_array(&self) -> bool {
-        match self {
-            JavaValue::Array(_) => true,
-            _ => false,
-        }
+        matches!(self, JavaValue::Array(_))
     }
 
     pub fn as_array(&self) -> Result<usize, ()> {
@@ -393,6 +387,10 @@ impl JavaValueVec {
         self.vec.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn reverse(&mut self) {
         self.vec.reverse();
     }
@@ -432,7 +430,7 @@ pub struct MethodDescriptor {
 }
 
 impl MethodDescriptor {
-    fn read_token(desc: &Vec<char>, mut offset: usize) -> Result<(String, usize), ()> {
+    fn read_token(desc: &[char], mut offset: usize) -> Result<(String, usize), ()> {
         let mut token = String::with_capacity(1);
         while desc[offset] == '[' {
             token.push(desc[offset]);

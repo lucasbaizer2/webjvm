@@ -31,7 +31,7 @@ fn Java_sun_reflect_NativeConstructorAccessorImpl_newInstance0(env: &JniEnv) -> 
         new_instance,
         constructor_declaring_class_id,
         "<init>",
-        &constructor_descriptor,
+        constructor_descriptor,
         &params,
     )?;
 

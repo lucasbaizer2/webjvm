@@ -69,7 +69,7 @@ pub fn getstatic(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
             let field_str = get_constant_name_and_type(const_pool, fr.name_and_type_index);
 
             let field_value = JavaClass::get_static_field(env.jvm, class_str, field_str.0)?;
-            env.state.stack.push(field_value.clone());
+            env.state.stack.push(field_value);
         }
         x => panic!("bad field ref: {:?}", x),
     }

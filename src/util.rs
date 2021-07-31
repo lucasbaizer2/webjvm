@@ -23,7 +23,7 @@ pub fn log_error(str: &str) {
     }
 }
 
-pub fn get_constant_string(const_pool: &Vec<ConstantInfo>, constant_index: u16) -> &String {
+pub fn get_constant_string(const_pool: &[ConstantInfo], constant_index: u16) -> &String {
     match &const_pool[constant_index as usize - 1] {
         ConstantInfo::Utf8(str) => &str.utf8_string,
         ConstantInfo::Class(cls) => get_constant_string(const_pool, cls.name_index),
@@ -32,7 +32,7 @@ pub fn get_constant_string(const_pool: &Vec<ConstantInfo>, constant_index: u16) 
     }
 }
 
-pub fn get_constant_name_and_type(const_pool: &Vec<ConstantInfo>, name_and_type_index: u16) -> (&String, &String) {
+pub fn get_constant_name_and_type(const_pool: &[ConstantInfo], name_and_type_index: u16) -> (&String, &String) {
     match &const_pool[name_and_type_index as usize - 1] {
         ConstantInfo::NameAndType(nat) => (
             match &const_pool[nat.name_index as usize - 1] {
