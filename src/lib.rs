@@ -303,8 +303,6 @@ impl WebJvmRuntime {
         let frame = {
             let (main_class, main_method) =
                 self.jvm.classpath.get_main_method().expect("no main method found on classpath");
-            log(&format!("Main method: {:?}", get_constant_string(&main_class.const_pool, main_class.this_class)));
-
             self.jvm.create_stack_frame(main_class, main_method).unwrap()
         };
         exec::env::initialize(&self.jvm);
@@ -327,36 +325,11 @@ mod tests {
         use crate::*;
         let mut cp = WebJvmClasspath::new();
         cp.add_classpath_jar(include_bytes!("../test/java/skinny-stdlib.jar"));
-        cp.add_classpath_jar(include_bytes!("../test/java/webjvm-stdlib.jar"));
         cp.add_classpath_entry(include_bytes!("../test/java/MainTest.class"));
 
         println!("Executing JVM...");
         let rt = WebJvmRuntime::new(cp);
         rt.execute_main().unwrap();
         println!("Finished executing!");
-
-        // await init();
-        // console.log('Called init, downloading content....');
-
-        // const stdlib = await fetch('./java/skinny-stdlib.jar');
-        // const webjvm = await fetch('./java/webjvm-stdlib.jar');
-        // const cls = await fetch('./java/MainTest.class');
-
-        // const stdlibBuffer = await stdlib.arrayBuffer();
-        // const webjvmBuffer = await webjvm.arrayBuffer();
-        // const classBuffer = await cls.arrayBuffer();
-
-        // console.log('Downloaded content, adding to VM classpath...');
-
-        // const cp = new WebJvmClasspath();
-        // cp.addClasspathJar(new Uint8Array(stdlibBuffer));
-        // cp.addClasspathJar(new Uint8Array(webjvmBuffer));
-        // cp.addClasspathEntry(new Uint8Array(classBuffer));
-        // // jvm.addNativeMethod(Java_java_lang_System_registerNatives);
-
-        // console.log('Executing JVM...');
-        // const jvm = window.jvm = new WebJvmRuntime(cp);
-        // jvm.executeMain();
-        // console.log('Finished executing!');
     }
 }

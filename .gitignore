@@ -1,5 +1,2 @@
 /target
-/test/java/stdlib
-/test/java/skinny-stdlib.jar
-/test/java/webjvm-stdlib.jar
-/java/build
+/test/java/rt.jar

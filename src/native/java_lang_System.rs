@@ -8,8 +8,6 @@ use crate::{
 
 #[allow(non_snake_case)]
 fn Java_java_lang_System_registerNatives(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    log("Registered System natives!");
-
     Ok(None)
 }
 
