@@ -8,11 +8,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
+      with:
+        toolchain: nightly
     - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --all-features
+      with:
+        command: build
+        args: --release --all-features
     - name: Check Format
-        run: cargo fmt -- --check
+      run: cargo fmt -- --check
