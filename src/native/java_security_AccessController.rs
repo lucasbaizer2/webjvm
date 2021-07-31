@@ -13,7 +13,7 @@ fn Java_java_security_AccessController_doPrivileged(env: &JniEnv) -> RuntimeResu
         env.invoke_instance_method(
             InvokeType::Virtual,
             action,
-            "java/security/PrivilegedAction",
+            env.get_class_id("java/security/PrivilegedAction"),
             "run",
             "()Ljava/lang/Object;",
             &[],

@@ -58,9 +58,9 @@ pub fn checkcast(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
 
     if (test.is_object() && test.as_object().unwrap().is_some()) || test.is_array() {
         let const_pool = use_const_pool!(&env);
-        let compare_type = get_constant_string(&const_pool, compare_type_id);
+        let compare_type = get_constant_string(const_pool, compare_type_id);
 
-        if !env.jvm.is_instance_of(&test, compare_type)? {
+        if !env.jvm.is_instance_of(test, compare_type)? {
             return Err(env.jvm.throw_exception("java/lang/ClassCastException", Some(compare_type)));
         }
     }
@@ -71,7 +71,7 @@ pub fn checkcast(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
 pub fn instanceof(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
     let (compare_type_id,) = take_values!(&mut env, u16);
     let const_pool = use_const_pool!(&env);
-    let compare_type = get_constant_string(&const_pool, compare_type_id);
+    let compare_type = get_constant_string(const_pool, compare_type_id);
     let res = env.jvm.is_instance_of(&pop!(&mut env), compare_type)?;
     env.state.stack.push(JavaValue::Boolean(res));
 
@@ -89,10 +89,11 @@ pub fn ifnonnull(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
     let (offset,) = take_values!(&mut env, i16);
     let val = pop!(&mut env);
     match val {
-        JavaValue::Object(ptr) => match ptr {
-            Some(_) => branch_to!(&mut env, offset),
-            None => (),
-        },
+        JavaValue::Object(ptr) => {
+            if ptr.is_some() {
+                branch_to!(&mut env, offset);
+            }
+        }
         JavaValue::Array(_) => branch_to!(&mut env, offset), // internally the way we store arrays they can never be null
         _ => panic!("ifnonnull expecting object"),
     };
@@ -104,10 +105,11 @@ pub fn ifnull(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameSt
     let (offset,) = take_values!(&mut env, i16);
     let val = pop!(&mut env);
     match val {
-        JavaValue::Object(ptr) => match ptr {
-            None => branch_to!(&mut env, offset),
-            Some(_) => (),
-        },
+        JavaValue::Object(ptr) => {
+            if ptr.is_none() {
+                branch_to!(&mut env, offset);
+            }
+        }
         JavaValue::Array(_) => (), // internally the way we store arrays they can never be null
         _ => panic!("ifnull expecting object"),
     };
@@ -129,16 +131,12 @@ pub fn returnvalue(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFr
         let top_frame = csf.last().unwrap();
         top_frame.container_method.clone()
     };
-    match return_value {
-        JavaValue::Object(_) => {
-            let descriptor = MethodDescriptor::new(&container_method).unwrap();
-            if !env.jvm.is_instance_of(&return_value, &descriptor.return_type[1..descriptor.return_type.len() - 1])? {
-                return Err(env.jvm.throw_exception("java/lang/ClassCastException", None));
-            }
+    if let JavaValue::Object(_) = return_value {
+        let descriptor = MethodDescriptor::new(&container_method).unwrap();
+        if !env.jvm.is_instance_of(&return_value, &descriptor.return_type[1..descriptor.return_type.len() - 1])? {
+            return Err(env.jvm.throw_exception("java/lang/ClassCastException", None));
         }
-        _ => (),
     }
-
     let mut csf = env.jvm.call_stack_frames.borrow_mut();
     csf.pop().unwrap();
     csf.last_mut().expect("stack underflow").state.return_stack_value = Some(return_value);
@@ -174,9 +172,7 @@ pub fn compare_references(mut env: InstructionEnvironment, jump_if_equal: bool) 
         },
         _ => false,
     };
-    if jump_if_equal && equal {
-        branch_to!(&mut env, offset);
-    } else if !jump_if_equal && !equal {
+    if (jump_if_equal && equal) || (!jump_if_equal && !equal) {
         branch_to!(&mut env, offset);
     }
 

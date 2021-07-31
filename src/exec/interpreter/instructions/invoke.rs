@@ -9,7 +9,7 @@ use classfile_parser::constant_info::{ConstantInfo, MethodRefConstant};
 fn create_stack_frame(
     env: &mut InstructionEnvironment,
     invoke_type: InvokeType,
-    const_pool: &Vec<ConstantInfo>,
+    const_pool: &[ConstantInfo],
     mr: &MethodRefConstant,
 ) -> RuntimeResult<CallStackFrame> {
     let class_str = get_constant_string(const_pool, mr.class_index);
@@ -41,10 +41,11 @@ fn create_stack_frame(
         _ => {
             let object_instance = env.state.stack.pop().expect("stack underflow");
             match object_instance {
-                JavaValue::Object(instance_id) => match instance_id {
-                    None => return Err(env.jvm.throw_npe()),
-                    _ => (),
-                },
+                JavaValue::Object(instance_id) => {
+                    if instance_id.is_none() {
+                        return Err(env.jvm.throw_npe());
+                    }
+                }
                 JavaValue::Array(_) => (),
                 _ => panic!("bad object ref"),
             };

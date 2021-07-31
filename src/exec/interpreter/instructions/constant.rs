@@ -37,7 +37,7 @@ define_const!(dconst1, Double, 1f64);
 
 fn push_constant(
     env: &mut InstructionEnvironment,
-    const_pool: &Vec<ConstantInfo>,
+    const_pool: &[ConstantInfo],
     constant_id: usize,
 ) -> RuntimeResult<()> {
     let value = match &const_pool[constant_id - 1] {
@@ -54,11 +54,10 @@ fn push_constant(
             x => panic!("bad string constant definition: {:?}", x),
         },
         ConstantInfo::Class(cc) => {
-            let class_name = get_constant_string(&const_pool, cc.name_index);
-            env.jvm.ensure_class_loaded(class_name, true)?;
+            let class_name = get_constant_string(const_pool, cc.name_index);
+            let class_id = env.jvm.ensure_class_loaded(class_name, true)?;
 
             let heap = env.jvm.heap.borrow();
-            let class_id = *heap.loaded_classes_lookup.get(class_name).unwrap();
             let class_object_id = heap.loaded_classes[class_id].class_object_id;
 
             JavaValue::Object(Some(class_object_id))

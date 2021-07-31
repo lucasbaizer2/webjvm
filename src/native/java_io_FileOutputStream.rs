@@ -40,10 +40,10 @@ fn Java_java_io_FileOutputStream_writeBytes(env: &JniEnv) -> RuntimeResult<Optio
         {
             if fd == 1 {
                 let mut stdout = std::io::stdout();
-                stdout.write(&local_buffer).unwrap();
+                stdout.write_all(&local_buffer).unwrap();
             } else if fd == 2 {
                 let mut stderr = std::io::stderr();
-                stderr.write(&local_buffer).unwrap();
+                stderr.write_all(&local_buffer).unwrap();
             }
         }
     } else {

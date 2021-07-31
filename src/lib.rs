@@ -1,4 +1,6 @@
 #![feature(label_break_value)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::result_unit_err)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -62,14 +64,14 @@ pub enum InvokeType {
 }
 
 pub struct Classpath {
-    class_files: Vec<ClassFile>,
+    class_files: HashMap<String, ClassFile>,
     native_methods: HashMap<String, Box<dyn NativeMethod>>,
 }
 
 impl Classpath {
     pub fn new() -> Classpath {
         Classpath {
-            class_files: Vec::new(),
+            class_files: HashMap::new(),
             native_methods: HashMap::new(),
         }
     }
@@ -80,8 +82,7 @@ impl Classpath {
 
     pub fn add_classpath_entry(&mut self, class_bytes: &[u8]) {
         let cls = classfile_parser::parse_class_bytes(class_bytes).unwrap();
-        log(get_constant_string(&cls.const_pool, cls.this_class));
-        self.class_files.push(cls);
+        self.class_files.insert(get_constant_string(&cls.const_pool, cls.this_class).clone(), cls);
     }
 
     pub fn add_classpath_jar(&mut self, jar_bytes: &[u8]) {
@@ -100,12 +101,13 @@ impl Classpath {
         }
     }
 
+    #[allow(clippy::borrowed_box)]
     pub fn get_native_method(&self, name: &str) -> Option<&Box<dyn NativeMethod>> {
         self.native_methods.get(name)
     }
 
     pub fn get_classpath_entry(&self, name: &str) -> Option<&ClassFile> {
-        self.class_files.iter().find(|c| get_constant_string(&c.const_pool, c.this_class) == name)
+        self.class_files.get(name)
     }
 
     pub fn get_field<'a>(
@@ -204,7 +206,7 @@ impl Classpath {
     }
 
     pub fn get_main_method(&self) -> Option<(&ClassFile, &MethodInfo)> {
-        let mut classes: Vec<&ClassFile> = self.class_files.iter().map(|x| x).collect();
+        let mut classes: Vec<&ClassFile> = self.class_files.values().collect();
         classes.reverse();
 
         for file in classes {

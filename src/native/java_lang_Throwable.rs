@@ -23,11 +23,12 @@ fn Java_java_lang_Throwable_fillInStackTrace(env: &JniEnv) -> RuntimeResult<Opti
             (class_name, method_name, line_number)
         };
 
-        let ste = env.new_instance("java/lang/StackTraceElement");
+        let ste_class_id = env.get_class_id("java/lang/StackTraceElement");
+        let ste = env.new_instance(ste_class_id);
         env.invoke_instance_method(
             InvokeType::Special,
             ste,
-            "java/lang/StackTraceElement",
+            ste_class_id,
             "<init>",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V",
             &[

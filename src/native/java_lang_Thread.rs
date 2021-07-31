@@ -1,5 +1,5 @@
 use crate::{
-    model::{JavaValue, RuntimeResult},
+    model::{InternalMetadata, JavaValue, RuntimeResult},
     Classpath, JniEnv,
 };
 
@@ -21,7 +21,7 @@ fn Java_java_lang_Thread_setPriority0(_: &JniEnv) -> RuntimeResult<Option<JavaVa
 #[allow(non_snake_case)]
 fn Java_java_lang_Thread_isAlive(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     if let Some(is_alive) = env.get_internal_metadata(env.get_current_instance(), "is_alive") {
-        Ok(Some(JavaValue::Boolean(is_alive == "true")))
+        Ok(Some(JavaValue::Boolean(is_alive.into_usize() == 1)))
     } else {
         Ok(Some(JavaValue::Boolean(false)))
     }
@@ -29,7 +29,7 @@ fn Java_java_lang_Thread_isAlive(env: &JniEnv) -> RuntimeResult<Option<JavaValue
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Thread_start0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    env.set_internal_metadata(env.get_current_instance(), "is_alive", "true");
+    env.set_internal_metadata(env.get_current_instance(), "is_alive", InternalMetadata::Numeric(1));
     Ok(None)
 }
 

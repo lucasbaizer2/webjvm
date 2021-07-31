@@ -72,13 +72,13 @@ impl InstructionExecutor {
             Ok(_) => Ok(()),
             Err(ex) => match ex {
                 JavaThrowable::Handled(_) => Ok(()),
-                JavaThrowable::Unhandled(_) => return Err(ex),
+                JavaThrowable::Unhandled(_) => Err(ex),
             },
         }
     }
 
     fn step_unchecked(&self, jvm: &Jvm) -> RuntimeResult<()> {
-        let ic = { self.instruction_count.borrow().clone() };
+        let ic = { *self.instruction_count.borrow() };
         {
             self.instruction_count.replace(ic + 1);
         }
@@ -95,7 +95,7 @@ impl InstructionExecutor {
                     let (env, jni_name) = {
                         let csf = jvm.call_stack_frames.borrow();
                         let frame = csf.last().expect("no stack frame present");
-                        let env = self.get_native_step_env(jvm, &frame);
+                        let env = self.get_native_step_env(jvm, frame);
 
                         let method_name = &frame.container_method[0..frame.container_method.find('(').unwrap()];
                         let jni_name = format!("Java_{}_{}", frame.container_class.replace("/", "_"), method_name);

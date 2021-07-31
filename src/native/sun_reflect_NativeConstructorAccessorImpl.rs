@@ -9,7 +9,8 @@ fn Java_sun_reflect_NativeConstructorAccessorImpl_newInstance0(env: &JniEnv) -> 
     let args = env.parameters[1].as_array();
 
     let constructor_declaring_class_obj = env.get_field(constructor, "clazz").as_object().unwrap().unwrap();
-    let constructor_declaring_class = env.get_internal_metadata(constructor_declaring_class_obj, "class_name").unwrap();
+    let constructor_declaring_class_id =
+        env.get_internal_metadata(constructor_declaring_class_obj, "class_id").unwrap().into_usize();
     let constructor_descriptor = "()V";
 
     let params = match args {
@@ -24,13 +25,13 @@ fn Java_sun_reflect_NativeConstructorAccessorImpl_newInstance0(env: &JniEnv) -> 
         Err(_) => Vec::new(),
     };
 
-    let new_instance = env.new_instance(&constructor_declaring_class);
+    let new_instance = env.new_instance(constructor_declaring_class_id);
     env.invoke_instance_method(
         InvokeType::Special,
         new_instance,
-        &constructor_declaring_class,
+        constructor_declaring_class_id,
         "<init>",
-        &constructor_descriptor,
+        constructor_descriptor,
         &params,
     )?;
 
