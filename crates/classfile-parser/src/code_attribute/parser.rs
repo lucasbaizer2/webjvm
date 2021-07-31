@@ -14,12 +14,11 @@ fn lookupswitch_parser(input: &[u8]) -> IResult<&[u8], Instruction> {
         input,
         default: be_i32
             >> npairs: be_u32
-            >> pairs:
-                count!(
-                    do_parse!(lookup: be_i32 >> offset: be_i32 >> (lookup, offset)),
-                    npairs as usize
-                )
-            >> (Instruction::Lookupswitch { default, pairs })
+            >> pairs: count!(do_parse!(lookup: be_i32 >> offset: be_i32 >> (lookup, offset)), npairs as usize)
+            >> (Instruction::Lookupswitch {
+                default,
+                pairs
+            })
     )
 }
 

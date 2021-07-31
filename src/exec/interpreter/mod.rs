@@ -1,6 +1,5 @@
 use crate::JniEnv;
 use crate::{exec::jvm::*, model::*, StackTraceElement};
-use classfile_parser::code_attribute::instruction_parser;
 use std::cell::RefCell;
 
 mod instructions;

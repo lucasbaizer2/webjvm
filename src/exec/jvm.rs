@@ -476,7 +476,7 @@ impl Jvm {
                     true => "<native method>",
                     false => "<unknown source>",
                 };
-                write!(&mut stacktrace, "    at {}.{}:{}\n", frame.container_class, frame.container_method, source)
+                writeln!(&mut stacktrace, "    at {}.{}:{}", frame.container_class, frame.container_method, source)
                     .unwrap();
             }
             stacktrace

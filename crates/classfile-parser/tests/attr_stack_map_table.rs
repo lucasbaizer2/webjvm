@@ -33,11 +33,15 @@ fn test_attribute_stack_map_table() {
 
                     use classfile_parser::attribute_info::StackMapFrame::*;
                     match a.entries[0] {
-                        SameFrame { .. } => {}
+                        SameFrame {
+                            ..
+                        } => {}
                         _ => panic!("unexpected frame type for frame 0"),
                     };
                     match a.entries[1] {
-                        SameLocals1StackItemFrame { .. } => {}
+                        SameLocals1StackItemFrame {
+                            ..
+                        } => {}
                         _ => panic!("unexpected frame type for frame 1: {:?}", &a.entries[1]),
                     };
                 }

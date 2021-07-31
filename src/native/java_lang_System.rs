@@ -2,7 +2,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     model::{JavaValue, RuntimeResult},
-    util::log,
     Classpath, InvokeType, JniEnv,
 };
 

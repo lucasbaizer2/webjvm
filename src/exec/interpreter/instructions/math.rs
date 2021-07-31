@@ -146,14 +146,12 @@ pub fn compare_floats(mut env: InstructionEnvironment, greater: bool) -> Runtime
             false => -1,
         };
         env.state.stack.push(JavaValue::Int(nan_value));
+    } else if lhs > rhs {
+        env.state.stack.push(JavaValue::Int(1));
+    } else if lhs == rhs {
+        env.state.stack.push(JavaValue::Int(0));
     } else {
-        if lhs > rhs {
-            env.state.stack.push(JavaValue::Int(1));
-        } else if lhs == rhs {
-            env.state.stack.push(JavaValue::Int(0));
-        } else {
-            env.state.stack.push(JavaValue::Int(-1));
-        }
+        env.state.stack.push(JavaValue::Int(-1));
     }
 
     Ok(env.state)

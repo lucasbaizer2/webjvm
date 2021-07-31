@@ -324,7 +324,7 @@ mod tests {
     pub fn run_tests() {
         use crate::*;
         let mut cp = WebJvmClasspath::new();
-        cp.add_classpath_jar(include_bytes!("../test/java/skinny-stdlib.jar"));
+        cp.add_classpath_jar(include_bytes!("../test/java/rt.jar"));
         cp.add_classpath_entry(include_bytes!("../test/java/MainTest.class"));
 
         println!("Executing JVM...");

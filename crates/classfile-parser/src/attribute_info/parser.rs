@@ -58,7 +58,12 @@ pub fn code_attribute_parser(input: &[u8]) -> Result<(&[u8], CodeAttribute), Err
 }
 
 fn same_frame_parser(input: &[u8], frame_type: u8) -> Result<(&[u8], StackMapFrame), Err<&[u8]>> {
-    value!(input, SameFrame { frame_type })
+    value!(
+        input,
+        SameFrame {
+            frame_type
+        }
+    )
 }
 
 fn verification_type(v: u8) -> Option<VerificationTypeInfo> {
@@ -84,13 +89,14 @@ fn verification_type_parser(input: &[u8]) -> Result<(&[u8], VerificationTypeInfo
     }
 }
 
-fn same_locals_1_stack_item_frame_parser(
-    input: &[u8],
-    frame_type: u8,
-) -> Result<(&[u8], StackMapFrame), Err<&[u8]>> {
+fn same_locals_1_stack_item_frame_parser(input: &[u8], frame_type: u8) -> Result<(&[u8], StackMapFrame), Err<&[u8]>> {
     do_parse!(
         input,
-        stack: verification_type_parser >> (SameLocals1StackItemFrame { frame_type, stack })
+        stack: verification_type_parser
+            >> (SameLocals1StackItemFrame {
+                frame_type,
+                stack
+            })
     )
 }
 
@@ -121,10 +127,7 @@ fn chop_frame_parser(input: &[u8], frame_type: u8) -> Result<(&[u8], StackMapFra
     )
 }
 
-fn same_frame_extended_parser(
-    input: &[u8],
-    frame_type: u8,
-) -> Result<(&[u8], StackMapFrame), Err<&[u8]>> {
+fn same_frame_extended_parser(input: &[u8], frame_type: u8) -> Result<(&[u8], StackMapFrame), Err<&[u8]>> {
     do_parse!(
         input,
         offset_delta: be_u16
@@ -181,15 +184,10 @@ fn stack_frame_parser(input: &[u8], frame_type: u8) -> Result<(&[u8], StackMapFr
 }
 
 fn stack_map_frame_entry_parser(input: &[u8]) -> Result<(&[u8], StackMapFrame), Err<&[u8]>> {
-    do_parse!(
-        input,
-        frame_type: be_u8 >> stack_frame: apply!(stack_frame_parser, frame_type) >> (stack_frame)
-    )
+    do_parse!(input, frame_type: be_u8 >> stack_frame: apply!(stack_frame_parser, frame_type) >> (stack_frame))
 }
 
-pub fn stack_map_table_attribute_parser(
-    input: &[u8],
-) -> Result<(&[u8], StackMapTableAttribute), Err<&[u8]>> {
+pub fn stack_map_table_attribute_parser(input: &[u8]) -> Result<(&[u8], StackMapTableAttribute), Err<&[u8]>> {
     do_parse!(
         input,
         number_of_entries: be_u16
@@ -201,9 +199,7 @@ pub fn stack_map_table_attribute_parser(
     )
 }
 
-pub fn exceptions_attribute_parser(
-    input: &[u8],
-) -> Result<(&[u8], ExceptionsAttribute), Err<&[u8]>> {
+pub fn exceptions_attribute_parser(input: &[u8]) -> Result<(&[u8], ExceptionsAttribute), Err<&[u8]>> {
     do_parse!(
         input,
         exception_table_length: be_u16
@@ -215,9 +211,7 @@ pub fn exceptions_attribute_parser(
     )
 }
 
-pub fn constant_value_attribute_parser(
-    input: &[u8],
-) -> Result<(&[u8], ConstantValueAttribute), Err<&[u8]>> {
+pub fn constant_value_attribute_parser(input: &[u8]) -> Result<(&[u8], ConstantValueAttribute), Err<&[u8]>> {
     do_parse!(
         input,
         constant_value_index: be_u16
@@ -241,9 +235,7 @@ fn bootstrap_method_parser(input: &[u8]) -> Result<(&[u8], BootstrapMethod), Err
     )
 }
 
-pub fn bootstrap_methods_attribute_parser(
-    input: &[u8],
-) -> Result<(&[u8], BootstrapMethodsAttribute), Err<&[u8]>> {
+pub fn bootstrap_methods_attribute_parser(input: &[u8]) -> Result<(&[u8], BootstrapMethodsAttribute), Err<&[u8]>> {
     do_parse!(
         input,
         num_bootstrap_methods: be_u16
@@ -255,9 +247,7 @@ pub fn bootstrap_methods_attribute_parser(
     )
 }
 
-pub fn sourcefile_attribute_parser(
-    input: &[u8],
-) -> Result<(&[u8], SourceFileAttribute), Err<&[u8]>> {
+pub fn sourcefile_attribute_parser(input: &[u8]) -> Result<(&[u8], SourceFileAttribute), Err<&[u8]>> {
     do_parse!(
         input,
         attribute_name_index: be_u16
@@ -283,9 +273,7 @@ fn method_parameter_parser(input: &[u8]) -> Result<(&[u8], MethodParameter), Err
     )
 }
 
-pub fn method_parameters_attribute_parser(
-    input: &[u8],
-) -> Result<(&[u8], MethodParametersAttribute), Err<&[u8]>> {
+pub fn method_parameters_attribute_parser(input: &[u8]) -> Result<(&[u8], MethodParametersAttribute), Err<&[u8]>> {
     do_parse!(
         input,
         parameters_count: be_u8

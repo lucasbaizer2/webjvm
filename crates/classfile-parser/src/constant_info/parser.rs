@@ -3,8 +3,7 @@ use nom::{be_f32, be_f64, be_i32, be_i64, be_u16, be_u8, Err, ErrorKind};
 use constant_info::*;
 
 fn utf8_constant(input: &[u8]) -> Utf8Constant {
-    let utf8_string =
-        cesu8::from_java_cesu8(&input).unwrap_or_else(|_| String::from_utf8_lossy(&input));
+    let utf8_string = cesu8::from_java_cesu8(&input).unwrap_or_else(|_| String::from_utf8_lossy(&input));
     Utf8Constant {
         utf8_string: utf8_string.to_string(),
         bytes: input.to_owned(),
@@ -170,10 +169,7 @@ fn const_block_parser(input: &[u8], const_type: u8) -> ConstantInfoResult {
 }
 
 fn single_constant_parser(input: &[u8]) -> ConstantInfoResult {
-    do_parse!(
-        input,
-        const_type: be_u8 >> const_block: apply!(const_block_parser, const_type) >> (const_block)
-    )
+    do_parse!(input, const_type: be_u8 >> const_block: apply!(const_block_parser, const_type) >> (const_block))
 }
 
 pub fn constant_parser(i: &[u8], const_pool_size: usize) -> ConstantInfoVecResult {
@@ -185,8 +181,7 @@ pub fn constant_parser(i: &[u8], const_pool_size: usize) -> ConstantInfoVecResul
             Ok((i, o)) => {
                 // Long and Double Entries have twice the size
                 // see https://docs.oracle.com/javase/specs/jvms/se6/html/ClassFile.doc.html#1348
-                let uses_two_entries =
-                    matches!(o, ConstantInfo::Long(..) | ConstantInfo::Double(..));
+                let uses_two_entries = matches!(o, ConstantInfo::Long(..) | ConstantInfo::Double(..));
 
                 res.push(o);
                 if uses_two_entries {

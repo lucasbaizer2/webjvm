@@ -31,12 +31,7 @@ fn test_valid_class() {
             println!("Interfaces:");
             let mut interface_index = 0;
             for i in &c.interfaces {
-                println!(
-                    "\t[{}] = const[{}] = {:?}",
-                    interface_index,
-                    i,
-                    c.const_pool[(i - 1) as usize]
-                );
+                println!("\t[{}] = const[{}] = {:?}", interface_index, i, c.const_pool[(i - 1) as usize]);
 
                 interface_index += 1;
             }
@@ -67,8 +62,7 @@ fn test_valid_class() {
                 for a in &m.attributes {
                     if a.attribute_name_index == code_const_index {
                         println!("\t\tCode attr found, len = {}", a.attribute_length);
-                        let code_result =
-                            classfile_parser::attribute_info::code_attribute_parser(&a.info);
+                        let code_result = classfile_parser::attribute_info::code_attribute_parser(&a.info);
                         match code_result {
                             Result::Ok((_, code)) => {
                                 println!("\t\t\tCode! code_length = {}", code.code_length);
@@ -103,13 +97,11 @@ fn test_utf_string_constants() {
                         if c.utf8_string == "2H₂ + O₂ ⇌ 2H₂O, R = 4.7 kΩ, ⌀ 200 mm" {
                             found_utf_maths_string = true;
                         }
-                        if c.utf8_string
-                            == "ᚻᛖ ᚳᚹᚫᚦ ᚦᚫᛏ ᚻᛖ ᛒᚢᛞᛖ ᚩᚾ ᚦᚫᛗ ᛚᚪᚾᛞᛖ ᚾᚩᚱᚦᚹᛖᚪᚱᛞᚢᛗ ᚹᛁᚦ ᚦᚪ ᚹᛖᛥᚫ"
+                        if c.utf8_string == "ᚻᛖ ᚳᚹᚫᚦ ᚦᚫᛏ ᚻᛖ ᛒᚢᛞᛖ ᚩᚾ ᚦᚫᛗ ᛚᚪᚾᛞᛖ ᚾᚩᚱᚦᚹᛖᚪᚱᛞᚢᛗ ᚹᛁᚦ ᚦᚪ ᚹᛖᛥᚫ"
                         {
                             found_utf_runes_string = true;
                         }
-                        if c.utf8_string == "⡌⠁⠧⠑ ⠼⠁⠒  ⡍⠜⠇⠑⠹⠰⠎ ⡣⠕⠌"
-                        {
+                        if c.utf8_string == "⡌⠁⠧⠑ ⠼⠁⠒  ⡍⠜⠇⠑⠹⠰⠎ ⡣⠕⠌" {
                             found_utf_braille_string = true;
                         }
                         if c.utf8_string == "\0𠜎" {
