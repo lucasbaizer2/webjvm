@@ -321,6 +321,21 @@ pub fn main() {
 #[cfg(test)]
 mod tests {
     #[test]
+    pub fn get_unimplemented_opcodes() {
+        use crate::exec::interpreter::*;
+
+        let mut total = 0;
+        for i in 0..0xca {
+            if INSTRUCTION_HANDLERS[i] as usize == empty_instruction_handler as usize {
+                println!("Unhandled opcode: 0x:{:x?}", i);
+                total += 1;
+            }
+        }
+
+        println!("Total unhandled opcodes: {}", total);
+    }
+
+    #[test]
     pub fn run_tests() {
         use crate::*;
         let mut cp = WebJvmClasspath::new();

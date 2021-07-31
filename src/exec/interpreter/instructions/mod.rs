@@ -121,6 +121,7 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0x00] = misc::nop;
 
     handlers[0x01] = constant::aconstnull;
+
     handlers[0x02] = constant::iconstm1;
     handlers[0x03] = constant::iconst0;
     handlers[0x04] = constant::iconst1;
@@ -128,12 +129,16 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0x06] = constant::iconst3;
     handlers[0x07] = constant::iconst4;
     handlers[0x08] = constant::iconst5;
+
     handlers[0x09] = constant::lconst0;
     handlers[0x0a] = constant::lconst1;
 
     handlers[0x0b] = constant::fconst0;
     handlers[0x0c] = constant::fconst1;
     handlers[0x0d] = constant::fconst2;
+
+    handlers[0x0e] = constant::dconst0;
+    handlers[0x0f] = constant::dconst1;
 
     handlers[0x10] = constant::bipush;
     handlers[0x11] = constant::sipush;

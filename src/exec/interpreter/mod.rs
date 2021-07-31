@@ -6,12 +6,12 @@ mod instructions;
 
 pub type InstructionHandler = fn(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState>;
 
-fn empty_instruction_handler(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn empty_instruction_handler(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
     Err(env.jvm.throw_exception("webjvm/lang/UnhandledInstructionError", Some(&format!("0x{:x?}", env.instruction))))
 }
 
 lazy_static! {
-    static ref INSTRUCTION_HANDLERS: Vec<InstructionHandler> = {
+    pub static ref INSTRUCTION_HANDLERS: Vec<InstructionHandler> = {
         let mut handlers: Vec<InstructionHandler> = vec![empty_instruction_handler; 256];
         instructions::initialize(&mut handlers);
         handlers

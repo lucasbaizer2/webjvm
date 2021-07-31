@@ -32,6 +32,9 @@ define_const!(fconst2, Float, 2f32);
 define_const!(lconst0, Long, 0);
 define_const!(lconst1, Long, 1);
 
+define_const!(dconst0, Double, 0f64);
+define_const!(dconst1, Double, 1f64);
+
 fn push_constant(
     env: &mut InstructionEnvironment,
     const_pool: &Vec<ConstantInfo>,
