@@ -63,6 +63,7 @@ fn Java_java_lang_System_initProperties(env: &JniEnv) -> RuntimeResult<Option<Ja
         ("sun.stderr.encoding", "UTF-8"),
     ];
 
+    let props_class = env.get_class_id("java/util/Properties");
     let prop_map = env.parameters[0].as_object().unwrap().unwrap();
     for default_property in default_properties {
         let key_str = env.new_string(default_property.0);
@@ -70,7 +71,7 @@ fn Java_java_lang_System_initProperties(env: &JniEnv) -> RuntimeResult<Option<Ja
         env.invoke_instance_method(
             InvokeType::Virtual,
             prop_map,
-            "java/util/Properties",
+            props_class,
             "setProperty",
             "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
             &[JavaValue::Object(Some(key_str)), JavaValue::Object(Some(value_str))],

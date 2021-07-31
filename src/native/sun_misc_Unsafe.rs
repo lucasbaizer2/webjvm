@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use crate::{
-    model::{JavaValue, RuntimeResult},
+    model::{InternalMetadata, JavaValue, RuntimeResult},
     Classpath, InvokeType, JniEnv,
 };
 
@@ -24,7 +24,7 @@ fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> RuntimeResult<Option<Ja
         .invoke_instance_method(
             InvokeType::Virtual,
             *array_class,
-            "java/lang/Class",
+            env.get_class_id("java/lang/Class"),
             "getComponentType",
             "()Ljava/lang/Class;",
             &[],
@@ -32,17 +32,19 @@ fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> RuntimeResult<Option<Ja
         .unwrap()
     {
         JavaValue::Object(obj) => match obj {
-            Some(component_type) => match env.get_internal_metadata(component_type, "class_name").unwrap().as_str() {
-                "byte" => 1,
-                "short" => 2,
-                "int" => 4,
-                "long" => 8,
-                "float" => 4,
-                "double" => 8,
-                "char" => 2,
-                "boolean" => 1,
-                _ => ADDRESS_SIZE,
-            },
+            Some(component_type) => {
+                match env.get_internal_metadata(component_type, "class_name").unwrap().into_string().as_str() {
+                    "byte" => 1,
+                    "short" => 2,
+                    "int" => 4,
+                    "long" => 8,
+                    "float" => 4,
+                    "double" => 8,
+                    "char" => 2,
+                    "boolean" => 1,
+                    _ => ADDRESS_SIZE,
+                }
+            }
             None => {
                 return Err(env.throw_exception("java/lang/InvalidClassCastException", Some("expecting array type")))
             }
@@ -124,7 +126,7 @@ fn Java_sun_misc_Unsafe_allocateMemory(env: &JniEnv) -> RuntimeResult<Option<Jav
 
     std::mem::forget(buf);
 
-    env.set_internal_metadata(instance, &(ptr as i64).to_string(), &block_size.to_string());
+    env.set_internal_metadata(instance, &(ptr as i64).to_string(), InternalMetadata::Numeric(block_size as usize));
 
     Ok(Some(JavaValue::Long(ptr as i64)))
 }
@@ -133,11 +135,10 @@ fn Java_sun_misc_Unsafe_allocateMemory(env: &JniEnv) -> RuntimeResult<Option<Jav
 fn Java_sun_misc_Unsafe_freeMemory(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     let instance = env.get_current_instance();
     let address = env.parameters[1].as_long().unwrap() as *mut u8;
-    let block_size: i64 =
-        env.remove_internal_metadata(instance, &(address as i64).to_string()).unwrap().parse().unwrap();
+    let block_size = env.remove_internal_metadata(instance, &(address as i64).to_string()).unwrap().into_usize();
 
     unsafe {
-        let data = Vec::from_raw_parts(address, block_size as usize, block_size as usize);
+        let data = Vec::from_raw_parts(address, block_size, block_size);
         std::mem::drop(data);
     }
 

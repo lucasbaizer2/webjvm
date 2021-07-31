@@ -135,10 +135,32 @@ pub struct JavaArray {
     pub values: Vec<JavaValue>,
 }
 
+#[derive(Debug, Clone)]
+pub enum InternalMetadata {
+    Text(String),
+    Numeric(usize),
+}
+
+impl InternalMetadata {
+    pub fn into_string(self) -> String {
+        match self {
+            InternalMetadata::Text(val) => val,
+            _ => panic!(),
+        }
+    }
+
+    pub fn into_usize(self) -> usize {
+        match self {
+            InternalMetadata::Numeric(val) => val,
+            _ => panic!(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct JavaObject {
     pub class_id: usize,
-    pub internal_metadata: HashMap<String, String>,
+    pub internal_metadata: HashMap<String, InternalMetadata>,
     pub instance_fields: HashMap<String, JavaValue>,
 }
 
@@ -159,15 +181,15 @@ impl JavaObject {
         }
     }
 
-    pub fn get_internal_metadata(&self, name: &str) -> Option<&String> {
+    pub fn get_internal_metadata(&self, name: &str) -> Option<&InternalMetadata> {
         self.internal_metadata.get(name)
     }
 
-    pub fn set_internal_metadata(&mut self, name: &str, value: &str) {
-        self.internal_metadata.insert(String::from(name), String::from(value));
+    pub fn set_internal_metadata(&mut self, name: &str, value: InternalMetadata) {
+        self.internal_metadata.insert(String::from(name), value);
     }
 
-    pub fn remove_internal_metadata(&mut self, name: &str) -> Option<String> {
+    pub fn remove_internal_metadata(&mut self, name: &str) -> Option<InternalMetadata> {
         self.internal_metadata.remove(name)
     }
 }

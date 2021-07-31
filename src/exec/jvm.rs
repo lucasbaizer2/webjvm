@@ -41,12 +41,12 @@ impl Jvm {
         let res = match val {
             JavaValue::Object(instance) => match instance {
                 Some(instance_id) => {
-                    let current_class = {
+                    let class_id = {
                         let heap = self.heap.borrow();
                         let obj = heap.object_heap_map.get(&instance_id).expect("bad object ref");
-                        heap.loaded_classes[obj.class_id].java_type.clone()
+                        obj.class_id
                     };
-                    self.is_assignable_from(compare_type, &current_class)?
+                    self.is_assignable_from(compare_type, class_id)?
                 }
                 None => true,
             },
@@ -146,6 +146,11 @@ impl Jvm {
         csf.len()
     }
 
+    pub fn get_class_name_from_id(&self, id: usize) -> String {
+        let heap = self.heap.borrow();
+        heap.loaded_classes[id].java_type.clone()
+    }
+
     pub fn ensure_class_loaded(&self, cls: &str, initialize: bool) -> RuntimeResult<usize> {
         match {
             let heap = self.heap.borrow();
@@ -159,7 +164,7 @@ impl Jvm {
                         class.is_initialized
                     };
                     if !is_initialized {
-                        self.initialize_class(cls)?;
+                        self.initialize_class(id)?;
                     }
                 }
 
@@ -271,11 +276,12 @@ impl Jvm {
 
                 let env = JniEnv::empty(&self);
                 // create java.lang.Class object after registering the class
-                let class_object_id = env.new_instance("java/lang/Class");
+                let lang_class_id = self.ensure_class_loaded("java/lang/Class", false)?;
+                let class_object_id = env.new_instance(lang_class_id);
                 env.invoke_instance_method(
                     InvokeType::Special,
                     class_object_id,
-                    "java/lang/Class",
+                    lang_class_id,
                     "<init>",
                     "(Ljava/lang/ClassLoader;)V",
                     &[JavaValue::Object(None)],
@@ -290,13 +296,16 @@ impl Jvm {
                     };
 
                     let java_class_obj = heap.object_heap_map.get_mut(&class_object_id).unwrap();
-                    java_class_obj.internal_metadata.insert(String::from("class_name"), String::from(cls));
+                    java_class_obj.internal_metadata.insert(String::from("class_id"), InternalMetadata::Numeric(id));
+                    java_class_obj
+                        .internal_metadata
+                        .insert(String::from("class_name"), InternalMetadata::Text(String::from(cls)));
 
                     is_class_type
                 };
 
                 if is_class_type && initialize {
-                    self.initialize_class(cls)?;
+                    self.initialize_class(id)?;
                 }
 
                 Ok(id)
@@ -304,43 +313,42 @@ impl Jvm {
         }
     }
 
-    pub fn initialize_class(&self, cls: &str) -> RuntimeResult<()> {
+    pub fn initialize_class(&self, class_id: usize) -> RuntimeResult<()> {
         {
             let heap = self.heap.borrow();
-            let class_id = heap.loaded_classes_lookup[cls];
             if heap.loaded_classes[class_id].is_initialized {
                 return Ok(());
             }
         }
 
-        let class_file = match self.classpath.get_classpath_entry(cls) {
+        let cls = self.get_class_name_from_id(class_id);
+        let class_file = match self.classpath.get_classpath_entry(&cls) {
             Some(file) => file,
-            None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(cls))),
+            None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(&cls))),
         };
 
         if class_file.super_class != 0 {
             let superclass = get_constant_string(&class_file.const_pool, class_file.super_class);
-            self.initialize_class(superclass)?;
+            let superclass_id = self.ensure_class_loaded(superclass, false)?;
+            self.initialize_class(superclass_id)?;
         }
 
         if let Some(_) = self.classpath.get_static_method(class_file, "<clinit>", "()V") {
             {
                 let mut heap = self.heap.borrow_mut();
-                let class_id = heap.loaded_classes_lookup[cls];
                 heap.loaded_classes[class_id].is_initialized = true;
             }
 
             let env = JniEnv::empty(self);
-            env.invoke_static_method(cls, "<clinit>", "()V", &[])?;
+            env.invoke_static_method(class_id, "<clinit>", "()V", &[])?;
         }
 
         Ok(())
     }
 
-    pub fn is_assignable_from(&self, superclass: &str, subclass: &str) -> RuntimeResult<bool> {
+    pub fn is_assignable_from(&self, superclass: &str, subclass_id: usize) -> RuntimeResult<bool> {
         let heap = self.heap.borrow();
-        let class_id = heap.loaded_classes_lookup[subclass];
-        let mut current_class = &heap.loaded_classes[class_id];
+        let mut current_class = &heap.loaded_classes[subclass_id];
         Ok('l: loop {
             if &current_class.java_type == superclass {
                 break true;
@@ -356,7 +364,7 @@ impl Jvm {
                 None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(&current_class.java_type))),
             };
             if cls.super_class == 0 {
-                break 'l false;
+                break 'l superclass == "java/lang/Object";
             }
             let superclass_name = get_constant_string(&cls.const_pool, cls.super_class);
             let class_id = heap.loaded_classes_lookup.get(superclass_name).expect("invalid superclass");
@@ -387,62 +395,62 @@ impl Jvm {
         };
         return self.throw_exception(&exception_class, detail_str.as_deref());
 
-        {
-            let env = JniEnv::empty(self);
+        // {
+        //     let env = JniEnv::empty(self);
 
-            let detail_field = env.get_field(reference, "detailMessage");
-            let detail_str = match detail_field.as_object().unwrap() {
-                Some(id) => env.get_string(id),
-                _ => String::from("no message"),
-            };
-            log_error(&format!("{}: {}", exception_class, detail_str));
+        //     let detail_field = env.get_field(reference, "detailMessage");
+        //     let detail_str = match detail_field.as_object().unwrap() {
+        //         Some(id) => env.get_string(id),
+        //         _ => String::from("no message"),
+        //     };
+        //     log_error(&format!("{}: {}", exception_class, detail_str));
 
-            let arr = env.get_field(reference, "stackTrace").as_array().unwrap();
-            let len = env.get_array_length(arr);
-            log_error(&format!("len: {}", len));
-            for i in 0..len {
-                let e = env.get_array_element(arr, i).as_object().unwrap().unwrap();
-                let res = env
-                    .invoke_instance_method(
-                        InvokeType::Virtual,
-                        e,
-                        "java/lang/Object",
-                        "toString",
-                        "()Ljava/lang/String;",
-                        &[],
-                    )
-                    .unwrap()
-                    .unwrap()
-                    .as_object()
-                    .unwrap()
-                    .unwrap();
-                let res_str = env.get_string(res);
-                log_error(&res_str);
-            }
-        }
+        //     let arr = env.get_field(reference, "stackTrace").as_array().unwrap();
+        //     let len = env.get_array_length(arr);
+        //     log_error(&format!("len: {}", len));
+        //     for i in 0..len {
+        //         let e = env.get_array_element(arr, i).as_object().unwrap().unwrap();
+        //         let res = env
+        //             .invoke_instance_method(
+        //                 InvokeType::Virtual,
+        //                 e,
+        //                 "java/lang/Object",
+        //                 "toString",
+        //                 "()Ljava/lang/String;",
+        //                 &[],
+        //             )
+        //             .unwrap()
+        //             .unwrap()
+        //             .as_object()
+        //             .unwrap()
+        //             .unwrap();
+        //         let res_str = env.get_string(res);
+        //         log_error(&res_str);
+        //     }
+        // }
 
-        {
-            let mut csf = self.call_stack_frames.borrow_mut();
-            let top_frame = csf.last_mut().unwrap();
-            if let Some(metadata) = top_frame.metadata.as_ref() {
-                for exception_item in &metadata.exception_table {
-                    if top_frame.state.instruction_offset >= exception_item.start_pc as usize
-                        && top_frame.state.instruction_offset <= exception_item.end_pc as usize
-                    {
-                        let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
-                        let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
-                        // TODO: make this polymorphic
-                        if &exception_class == catch_type {
-                            // let top_frame_mut = csf
-                            top_frame.state.instruction_offset = exception_item.handler_pc as usize;
-                            return JavaThrowable::Handled(reference);
-                        }
-                    }
-                }
-            }
-        }
+        // {
+        //     let mut csf = self.call_stack_frames.borrow_mut();
+        //     let top_frame = csf.last_mut().unwrap();
+        //     if let Some(metadata) = top_frame.metadata.as_ref() {
+        //         for exception_item in &metadata.exception_table {
+        //             if top_frame.state.instruction_offset >= exception_item.start_pc as usize
+        //                 && top_frame.state.instruction_offset <= exception_item.end_pc as usize
+        //             {
+        //                 let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
+        //                 let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
+        //                 // TODO: make this polymorphic
+        //                 if &exception_class == catch_type {
+        //                     // let top_frame_mut = csf
+        //                     top_frame.state.instruction_offset = exception_item.handler_pc as usize;
+        //                     return JavaThrowable::Handled(reference);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
-        return JavaThrowable::Unhandled(reference);
+        // return JavaThrowable::Unhandled(reference);
     }
 
     pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
@@ -482,8 +490,11 @@ impl Jvm {
             stacktrace
         };
 
-        {
+        loop {
             let mut csf = self.call_stack_frames.borrow_mut();
+            if csf.len() == 1 {
+                break;
+            }
             let top_frame = csf.last_mut().unwrap();
             if let Some(metadata) = top_frame.metadata.as_ref() {
                 for exception_item in &metadata.exception_table {
@@ -505,6 +516,7 @@ impl Jvm {
                     }
                 }
             }
+            csf.pop().unwrap();
         }
 
         if let Some(message_str) = message {
@@ -516,17 +528,16 @@ impl Jvm {
         return JavaThrowable::Unhandled(0);
     }
 
-    pub fn new_instance(&self, root_class_name: &str) -> RuntimeResult<JavaObject> {
+    pub fn new_instance(&self, root_class_id: usize) -> RuntimeResult<JavaObject> {
         let mut instance_fields = HashMap::new();
-        let mut root_class_id = None;
 
-        let mut class_name = root_class_name;
+        let mut class_name = {
+            let heap = self.heap.borrow();
+            &heap.loaded_classes[root_class_id].java_type.clone()
+        };
         loop {
-            let class_id = self.ensure_class_loaded(class_name, true)?;
+            self.ensure_class_loaded(class_name, true)?;
             let cls = self.classpath.get_classpath_entry(&class_name).unwrap();
-            if root_class_id == None {
-                root_class_id = Some(class_id);
-            }
 
             let declared_fields: Vec<&FieldInfo> =
                 cls.fields.iter().filter(|field| !field.access_flags.contains(FieldAccessFlags::STATIC)).collect();
@@ -545,7 +556,7 @@ impl Jvm {
         }
 
         Ok(JavaObject {
-            class_id: root_class_id.unwrap(),
+            class_id: root_class_id,
             instance_fields,
             internal_metadata: HashMap::new(),
         })
@@ -611,7 +622,8 @@ impl Jvm {
             }
         }
 
-        let mut instance = self.new_instance("java/lang/String").unwrap();
+        let string_class = self.ensure_class_loaded("java/lang/String", true).unwrap();
+        let mut instance = self.new_instance(string_class).unwrap();
 
         let chars: Vec<JavaValue> = inner.encode_utf16().into_iter().map(|c| JavaValue::Char(c)).collect();
         let array_id = self.create_constant_array(JavaArrayType::Char, chars);

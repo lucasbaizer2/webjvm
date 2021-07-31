@@ -55,10 +55,9 @@ fn push_constant(
         },
         ConstantInfo::Class(cc) => {
             let class_name = get_constant_string(&const_pool, cc.name_index);
-            env.jvm.ensure_class_loaded(class_name, true)?;
+            let class_id = env.jvm.ensure_class_loaded(class_name, true)?;
 
             let heap = env.jvm.heap.borrow();
-            let class_id = *heap.loaded_classes_lookup.get(class_name).unwrap();
             let class_object_id = heap.loaded_classes[class_id].class_object_id;
 
             JavaValue::Object(Some(class_object_id))

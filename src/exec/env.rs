@@ -1,8 +1,8 @@
 use super::jvm::Jvm;
 use crate::{
     model::{
-        CallStackFrame, CallStackFrameState, JavaArrayType, JavaClass, JavaThrowable, JavaValue, JavaValueVec,
-        RuntimeResult,
+        CallStackFrame, CallStackFrameState, InternalMetadata, JavaArrayType, JavaClass, JavaThrowable, JavaValue,
+        JavaValueVec, RuntimeResult,
     },
     InvokeType, StackTraceElement,
 };
@@ -71,14 +71,12 @@ impl<'a> JniEnv<'a> {
         self.jvm.ensure_class_loaded(class, true).unwrap()
     }
 
-    pub fn get_superclass(&self, subclass: &str) -> Option<String> {
-        let subclass_id = self.load_class(subclass, false);
-
+    pub fn get_superclass(&self, subclass_id: usize) -> Option<usize> {
         let heap = self.jvm.heap.borrow();
         let class = &heap.loaded_classes[subclass_id];
         match class.superclass_id {
             None => None,
-            Some(id) => Some(heap.loaded_classes[id].java_type.clone()),
+            Some(id) => Some(id),
         }
     }
 
@@ -124,8 +122,8 @@ impl<'a> JniEnv<'a> {
         }
     }
 
-    pub fn new_instance(&self, class: &str) -> usize {
-        let obj = self.jvm.new_instance(class).unwrap();
+    pub fn new_instance(&self, class_id: usize) -> usize {
+        let obj = self.jvm.new_instance(class_id).unwrap();
         self.jvm.heap_store_instance(obj)
     }
 
@@ -145,19 +143,19 @@ impl<'a> JniEnv<'a> {
         obj.get_field(self.jvm, field_name).unwrap().clone()
     }
 
-    pub fn set_internal_metadata(&self, instance_id: usize, field_name: &str, value: &str) {
+    pub fn set_internal_metadata(&self, instance_id: usize, field_name: &str, value: InternalMetadata) {
         let mut heap = self.jvm.heap.borrow_mut();
         let obj = heap.object_heap_map.get_mut(&instance_id).expect("invalid instance ID");
         obj.set_internal_metadata(field_name, value);
     }
 
-    pub fn remove_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<String> {
+    pub fn remove_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<InternalMetadata> {
         let mut heap = self.jvm.heap.borrow_mut();
         let obj = heap.object_heap_map.get_mut(&instance_id).expect("invalid instance ID");
         obj.remove_internal_metadata(field_name)
     }
 
-    pub fn get_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<String> {
+    pub fn get_internal_metadata(&self, instance_id: usize, field_name: &str) -> Option<InternalMetadata> {
         let heap = self.jvm.heap.borrow();
         let obj = heap.object_heap_map.get(&instance_id).expect("invalid instance ID");
         obj.get_internal_metadata(field_name).cloned()
@@ -204,20 +202,21 @@ impl<'a> JniEnv<'a> {
 
     pub fn invoke_static_method(
         &self,
-        class_name: &str,
+        class_id: usize,
         method_name: &str,
         method_descriptor: &str,
         params: &[JavaValue],
     ) -> RuntimeResult<Option<JavaValue>> {
-        let class = self.get_class_file(&class_name);
+        let class = self.get_class_file(class_id);
         let (method_class, method) =
             match self.jvm.classpath.get_method(InvokeType::Static, class, method_name, method_descriptor) {
                 Some(method) => method,
                 None => {
+                    let class_name = self.jvm.get_class_name_from_id(class_id);
                     return Err(self.jvm.throw_exception(
                         "java/lang/NoSuchMethodError",
                         Some(&format!("{}.{}{}", class_name, method_name, method_descriptor)),
-                    ))
+                    ));
                 }
             };
         self.invoke_method(method_class, method, JavaValueVec::from_vec(params.to_vec()))
@@ -227,30 +226,30 @@ impl<'a> JniEnv<'a> {
         &self,
         invoke_type: InvokeType,
         instance_id: usize,
-        declaring_class: &str,
+        declaring_class_id: usize,
         method_name: &str,
         method_descriptor: &str,
         params: &[JavaValue],
     ) -> RuntimeResult<Option<JavaValue>> {
-        let class_name = match invoke_type {
+        let class_id = match invoke_type {
             InvokeType::Virtual => {
                 let heap = self.jvm.heap.borrow();
                 let obj = heap.object_heap_map.get(&instance_id).expect("invalid object ref");
-                let class = &heap.loaded_classes[obj.class_id];
-                class.java_type.clone()
+                obj.class_id
             }
-            InvokeType::Special => String::from(declaring_class),
+            InvokeType::Special => declaring_class_id,
             _ => panic!("invalid invoke type"),
         };
-        let class = self.get_class_file(&class_name);
+        let class = self.get_class_file(class_id);
         let (method_class, method) =
             match self.jvm.classpath.get_method(invoke_type, class, method_name, method_descriptor) {
                 Some(method) => method,
                 None => {
+                    let class_name = self.jvm.get_class_name_from_id(class_id);
                     return Err(self.jvm.throw_exception(
                         "java/lang/NoSuchMethodError",
                         Some(&format!("{}.{}{}", class_name, method_name, method_descriptor)),
-                    ))
+                    ));
                 }
             };
 
@@ -271,7 +270,8 @@ impl<'a> JniEnv<'a> {
         self.parameters[0].as_object().expect("expecting object parameter").unwrap()
     }
 
-    pub fn get_class_file(&self, class_name: &str) -> &ClassFile {
+    pub fn get_class_file(&self, class_id: usize) -> &ClassFile {
+        let class_name = self.jvm.get_class_name_from_id(class_id);
         self.jvm.classpath.get_classpath_entry(&class_name).unwrap_or_else(|| {
             self.jvm.throw_exception("java/lang/NoClassDefError", Some(&class_name));
             panic!();
@@ -306,49 +306,28 @@ pub fn initialize(jvm: &Jvm) {
     let env = JniEnv::empty(jvm);
 
     {
-        let system_thread_group = env.new_instance("java/lang/ThreadGroup");
+        let thread_group_class_id = env.get_class_id("java/lang/ThreadGroup");
+        let system_thread_group = env.new_instance(thread_group_class_id);
         env.invoke_instance_method(
             InvokeType::Special,
             system_thread_group,
-            "java/lang/ThreadGroup",
+            thread_group_class_id,
             "<init>",
             "()V",
             &[],
         )
         .unwrap();
 
-        let main_thread = env.new_instance("java/lang/Thread");
+        let thread_class_id = env.get_class_id("java/lang/Thread");
+        let main_thread = env.new_instance(thread_class_id);
         env.set_field(main_thread, "name", JavaValue::Object(Some(env.new_string("main"))));
         env.set_field(main_thread, "group", JavaValue::Object(Some(system_thread_group)));
         env.set_field(main_thread, "priority", JavaValue::Int(5));
+
         let mut heap = jvm.heap.borrow_mut();
         heap.main_thread_object = main_thread;
     }
 
-    // let cos = env.new_instance("webjvm/io/ConsoleOutputStream");
-    // env.invoke_instance_method(
-    //     InvokeType::Special,
-    //     cos,
-    //     "webjvm/io/ConsoleOutputStream",
-    //     "<init>",
-    //     "(Z)V",
-    //     &[JavaValue::Boolean(false)],
-    // );
-
-    // let stdout = env.new_instance("java/io/PrintStream");
-    // env.invoke_instance_method(
-    //     InvokeType::Special,
-    //     stdout,
-    //     "java/io/PrintStream",
-    //     "<init>",
-    //     "(Ljava/io/OutputStream;)V",
-    //     &[JavaValue::Object(Some(cos))],
-    // );
-
-    // let system_id = jvm.ensure_class_loaded("java/lang/System", true);
-    // let mut heap = jvm.heap.borrow_mut();
-    // let system_class = &mut heap.loaded_classes[system_id];
-    // system_class.set_static_field("out", JavaValue::Object(Some(stdout)));
-
-    env.invoke_static_method("java/lang/System", "initializeSystemClass", "()V", &[]).unwrap();
+    let system_class_id = env.get_class_id("java/lang/System");
+    env.invoke_static_method(system_class_id, "initializeSystemClass", "()V", &[]).unwrap();
 }
