@@ -74,10 +74,7 @@ impl<'a> JniEnv<'a> {
     pub fn get_superclass(&self, subclass_id: usize) -> Option<usize> {
         let heap = self.jvm.heap.borrow();
         let class = &heap.loaded_classes[subclass_id];
-        match class.superclass_id {
-            None => None,
-            Some(id) => Some(id),
-        }
+        class.superclass_id
     }
 
     pub fn get_class_object(&self, class_id: usize) -> usize {
@@ -172,16 +169,14 @@ impl<'a> JniEnv<'a> {
         for i in 0..params.len() {
             frame.state.lvt[index] = params[i].clone();
             index += 1;
-            match params[i] {
-                JavaValue::Internal {
-                    is_higher_bits,
-                    ..
-                } => {
-                    if is_higher_bits {
-                        index += 1;
-                    }
+            if let JavaValue::Internal {
+                is_higher_bits,
+                ..
+            } = params[i]
+            {
+                if is_higher_bits {
+                    index += 1;
                 }
-                _ => (),
             }
         }
 
