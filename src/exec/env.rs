@@ -274,7 +274,7 @@ impl<'a> JniEnv<'a> {
     }
 }
 
-pub fn initialize(jvm: &Jvm) -> RuntimeResult<()> {
+pub fn initialize(jvm: &mut Jvm) -> RuntimeResult<()> {
     let virtual_frame = CallStackFrame {
         container_class: String::from("webjvm/lang/Main"),
         container_method: String::from("main()V"),
@@ -324,6 +324,8 @@ pub fn initialize(jvm: &Jvm) -> RuntimeResult<()> {
 
     let system_class_id = env.get_class_id("java/lang/System")?;
     env.invoke_static_method(system_class_id, "initializeSystemClass", "()V", &[])?;
+
+    jvm.initialized = true;
 
     Ok(())
 }

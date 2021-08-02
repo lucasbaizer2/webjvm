@@ -17,6 +17,7 @@ pub struct Jvm {
     pub classpath: Classpath,
     pub call_stack_frames: RefCell<Vec<CallStackFrame>>,
     pub heap: RefCell<Heap>,
+    pub initialized: bool,
 }
 
 impl Jvm {
@@ -34,6 +35,7 @@ impl Jvm {
                 object_id_offset: 0,
                 main_thread_object: 0,
             }),
+            initialized: false,
         }
     }
 
@@ -390,88 +392,11 @@ impl Jvm {
 
             detail_field.as_object().unwrap().map(|id| env.get_string(id))
         };
+
         return self.throw_exception(&exception_class, detail_str.as_deref());
-
-        // {
-        //     let env = JniEnv::empty(self);
-
-        //     let detail_field = env.get_field(reference, "detailMessage");
-        //     let detail_str = match detail_field.as_object().unwrap() {
-        //         Some(id) => env.get_string(id),
-        //         _ => String::from("no message"),
-        //     };
-        //     log_error(&format!("{}: {}", exception_class, detail_str));
-
-        //     let arr = env.get_field(reference, "stackTrace").as_array().unwrap();
-        //     let len = env.get_array_length(arr);
-        //     log_error(&format!("len: {}", len));
-        //     for i in 0..len {
-        //         let e = env.get_array_element(arr, i).as_object().unwrap().unwrap();
-        //         let res = env
-        //             .invoke_instance_method(
-        //                 InvokeType::Virtual,
-        //                 e,
-        //                 "java/lang/Object",
-        //                 "toString",
-        //                 "()Ljava/lang/String;",
-        //                 &[],
-        //             )
-        //             .unwrap()
-        //             .unwrap()
-        //             .as_object()
-        //             .unwrap()
-        //             .unwrap();
-        //         let res_str = env.get_string(res);
-        //         log_error(&res_str);
-        //     }
-        // }
-
-        // {
-        //     let mut csf = self.call_stack_frames.borrow_mut();
-        //     let top_frame = csf.last_mut().unwrap();
-        //     if let Some(metadata) = top_frame.metadata.as_ref() {
-        //         for exception_item in &metadata.exception_table {
-        //             if top_frame.state.instruction_offset >= exception_item.start_pc as usize
-        //                 && top_frame.state.instruction_offset <= exception_item.end_pc as usize
-        //             {
-        //                 let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
-        //                 let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
-        //                 // TODO: make this polymorphic
-        //                 if &exception_class == catch_type {
-        //                     // let top_frame_mut = csf
-        //                     top_frame.state.instruction_offset = exception_item.handler_pc as usize;
-        //                     return JavaThrowable::Handled(reference);
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
-        // return JavaThrowable::Unhandled(reference);
     }
 
     pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
-        // let env = JniEnv::empty(self);
-        // let msg = env.new_string(message);
-
-        // let ex = env.new_instance(exception_class);
-        // env.invoke_instance_method(
-        //     InvokeType::Special,
-        //     ex,
-        //     exception_class,
-        //     "<init>",
-        //     "(Ljava/lang/String;)V",
-        //     &[JavaValue::Object(Some(msg))],
-        // );
-        // env.invoke_instance_method(
-        //     InvokeType::Virtual,
-        //     ex,
-        //     exception_class,
-        //     "printStackTrace",
-        //     "()V",
-        //     &[],
-        // );
-
         let stacktrace = {
             let csf = self.call_stack_frames.borrow();
             let mut stacktrace = String::new();
@@ -504,7 +429,7 @@ impl Jvm {
                             } else {
                                 log_error(&format!("{}\n{}", exception_class, stacktrace));
                             }
-                            
+
                             // TODO: finally blocks
                             return JavaThrowable::Unhandled(0);
                         }

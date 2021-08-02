@@ -301,13 +301,13 @@ impl WebJvmRuntime {
     }
 
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = executeMain)]
-    pub fn execute_main(&self) -> Result<(), JsValue> {
+    pub fn execute_main(&mut self) -> Result<(), JsValue> {
         let frame = {
             let (main_class, main_method) =
                 self.jvm.classpath.get_main_method().expect("no main method found on classpath");
             self.jvm.create_stack_frame(main_class, main_method).unwrap()
         };
-        exec::env::initialize(&self.jvm).unwrap();
+        exec::env::initialize(&mut self.jvm).unwrap();
         self.jvm.push_call_stack_frame(frame);
         self.jvm.executor.step_until_stack_depth(&self.jvm, 1).unwrap();
 
@@ -345,7 +345,7 @@ mod tests {
         cp.add_classpath_entry(include_bytes!("../test/java/MainTest.class"));
 
         println!("Executing JVM...");
-        let rt = WebJvmRuntime::new(cp);
+        let mut rt = WebJvmRuntime::new(cp);
         rt.execute_main().unwrap();
         println!("Finished executing!");
     }
