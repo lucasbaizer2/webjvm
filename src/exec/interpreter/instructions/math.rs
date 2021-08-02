@@ -64,6 +64,18 @@ macro_rules! define_fmath {
     }
 }
 
+macro_rules! define_dmath {
+    ( $insn:ident, $op:tt ) => {
+        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+            let rhs = pop_full!(&mut env).as_double().expect("expecting double value");
+            let lhs = pop_full!(&mut env).as_double().expect("expecting double value");
+            env.state.stack.push(JavaValue::Double(lhs $op rhs));
+
+            Ok(env.state)
+        }
+    }
+}
+
 macro_rules! define_cast {
     ( $insn:ident, $from:ident, $jt:ident, $cast:ty ) => {
         pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
@@ -100,7 +112,14 @@ define_lmath!(lxor, ^);
 define_fmath!(fadd, +);
 define_fmath!(fsub, -);
 define_fmath!(fmul, *);
+define_fmath!(fdiv, /);
 define_fmath!(frem, %);
+
+define_dmath!(dadd, +);
+define_dmath!(dsub, -);
+define_dmath!(dmul, *);
+define_dmath!(ddiv, /);
+define_dmath!(drem, %);
 
 define_ishift!(ishl, <<, i32);
 define_ishift!(ishr, >>, i32);
@@ -118,13 +137,50 @@ define_cast!(i2l, int, Long, i64);
 define_cast!(i2s, int, Short, i16);
 
 define_cast!(f2i, float, Int, i32);
+define_cast!(f2l, float, Long, i64);
+define_cast!(f2d, float, Double, f64);
+
+define_cast!(d2i, double, Int, i32);
+define_cast!(d2l, double, Long, i64);
+define_cast!(d2f, double, Float, f32);
 
 define_cast!(l2i, long, Int, i32);
+define_cast!(l2f, long, Float, f32);
+define_cast!(l2d, long, Double, f64);
 
 pub fn iinc(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
     let (index, value) = take_values!(&mut env, u8, i8);
     let current_val = env.state.lvt[index as usize].as_int().expect("expecting integral value");
     env.state.lvt[index as usize] = JavaValue::Int(current_val + value as i32);
+
+    Ok(env.state)
+}
+
+pub fn dcmpg(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+    compare_doubles(env, true)
+}
+
+pub fn dcmpl(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+    compare_doubles(env, false)
+}
+
+#[allow(clippy::float_cmp)]
+pub fn compare_doubles(mut env: InstructionEnvironment, greater: bool) -> RuntimeResult<CallStackFrameState> {
+    let rhs = pop_full!(&mut env).as_double().expect("expecting double");
+    let lhs = pop_full!(&mut env).as_double().expect("expecting double");
+    if lhs.is_nan() || rhs.is_nan() {
+        let nan_value = match greater {
+            true => 1,
+            false => -1,
+        };
+        env.state.stack.push(JavaValue::Int(nan_value));
+    } else if lhs > rhs {
+        env.state.stack.push(JavaValue::Int(1));
+    } else if lhs == rhs {
+        env.state.stack.push(JavaValue::Int(0));
+    } else {
+        env.state.stack.push(JavaValue::Int(-1));
+    }
 
     Ok(env.state)
 }

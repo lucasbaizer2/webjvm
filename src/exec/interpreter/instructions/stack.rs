@@ -40,3 +40,13 @@ pub fn dupx1(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameSta
 
     Ok(env.state)
 }
+
+pub fn swap(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+    let top = pop!(&mut env);
+    let under_top = pop!(&mut env);
+
+    env.state.stack.push(top);
+    env.state.stack.push(under_top);
+
+    Ok(env.state)
+}

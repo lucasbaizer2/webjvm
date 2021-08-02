@@ -231,21 +231,32 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0x59] = stack::dup;
     handlers[0x5a] = stack::dupx1;
     handlers[0x5c] = stack::dup2;
+    handlers[0x5f] = stack::swap;
 
     handlers[0x60] = math::iadd;
     handlers[0x61] = math::ladd;
     handlers[0x62] = math::fadd;
+    handlers[0x63] = math::dadd;
     handlers[0x64] = math::isub;
     handlers[0x65] = math::lsub;
     handlers[0x66] = math::fsub;
+    handlers[0x67] = math::dsub;
     handlers[0x68] = math::imul;
     handlers[0x69] = math::lmul;
     handlers[0x6a] = math::fmul;
+    handlers[0x6b] = math::dmul;
     handlers[0x6c] = math::idiv;
     handlers[0x6d] = math::ldiv;
+    handlers[0x6e] = math::fdiv;
+    handlers[0x6f] = math::ddiv;
     handlers[0x70] = math::irem;
     handlers[0x71] = math::lrem;
     handlers[0x72] = math::frem;
+    handlers[0x73] = math::drem;
+    // handlers[0x74] = math::ineg;
+    // handlers[0x75] = math::lneg;
+    // handlers[0x76] = math::fneg;
+    // handlers[0x77] = math::dneg;
 
     handlers[0x78] = math::ishl;
     handlers[0x79] = math::lshl;
@@ -265,7 +276,14 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0x86] = math::i2f;
     handlers[0x87] = math::i2d;
     handlers[0x88] = math::l2i;
+    handlers[0x89] = math::l2f;
+    handlers[0x8a] = math::l2d;
     handlers[0x8b] = math::f2i;
+    handlers[0x8c] = math::f2l;
+    handlers[0x8d] = math::f2d;
+    handlers[0x8e] = math::d2i;
+    handlers[0x8f] = math::d2l;
+    handlers[0x90] = math::d2f;
     handlers[0x91] = math::i2b;
     handlers[0x92] = math::i2c;
     handlers[0x93] = math::i2s;
@@ -273,6 +291,8 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0x94] = math::lcmp;
     handlers[0x95] = math::fcmpl;
     handlers[0x96] = math::fcmpg;
+    handlers[0x97] = math::dcmpl;
+    handlers[0x98] = math::dcmpg;
 
     handlers[0x99] = control_flow::ifeq;
     handlers[0x9a] = control_flow::ifne;
