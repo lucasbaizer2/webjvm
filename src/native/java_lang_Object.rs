@@ -24,7 +24,7 @@ fn Java_java_lang_Object_hashCode(env: &JniEnv) -> RuntimeResult<Option<JavaValu
 #[allow(non_snake_case)]
 fn Java_java_lang_Object_getClass(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
     let type_name = env.get_object_type_name(env.get_current_instance());
-    let type_obj = env.get_class_object(env.get_class_id(&type_name));
+    let type_obj = env.get_class_object(env.get_class_id(&type_name)?);
 
     Ok(Some(JavaValue::Object(Some(type_obj))))
 }

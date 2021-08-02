@@ -313,6 +313,7 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0xbc] = array::newarray;
     handlers[0xbd] = array::anewarray;
     handlers[0xbe] = array::arraylength;
+    handlers[0xbf] = misc::athrow;
 
     handlers[0xc0] = control_flow::checkcast;
     handlers[0xc1] = control_flow::instanceof;

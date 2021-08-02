@@ -41,7 +41,7 @@ fn Java_java_lang_Class_getComponentType(env: &JniEnv) -> RuntimeResult<Option<J
     if component_name.starts_with('L') && component_name.ends_with(';') {
         component_name = &component_name[1..component_name.len() - 1];
     }
-    let component_class_id = env.get_class_id(component_name);
+    let component_class_id = env.get_class_id(component_name)?;
     let class_instance = env.get_class_object(component_class_id);
 
     Ok(Some(JavaValue::Object(Some(class_instance))))
@@ -63,7 +63,7 @@ fn Java_java_lang_Class_getPrimitiveClass(env: &JniEnv) -> RuntimeResult<Option<
         x => return Err(env.throw_exception("java/lang/IllegalArgumentException", Some(x))),
     };
 
-    let primitive_class_id = env.get_class_id(signature_name);
+    let primitive_class_id = env.get_class_id(signature_name)?;
     let primitive_class = env.get_class_object(primitive_class_id);
 
     Ok(Some(JavaValue::Object(Some(primitive_class))))
@@ -76,12 +76,12 @@ fn Java_java_lang_Class_forName0(env: &JniEnv) -> RuntimeResult<Option<JavaValue
         None => return Err(env.throw_exception("java/lang/NullPointerException", None)),
     });
     let initialize = env.parameters[1].as_boolean().unwrap();
-    let class_id = env.load_class(&name.replace(".", "/"), initialize);
+    let class_id = env.load_class(&name.replace(".", "/"), initialize)?;
     let class_object = env.get_class_object(class_id);
     Ok(Some(JavaValue::Object(Some(class_object))))
 }
 
-fn get_declared_methods(env: &JniEnv, constructors: bool) -> usize {
+fn get_declared_methods(env: &JniEnv, constructors: bool) -> RuntimeResult<usize> {
     let class_id = env.get_internal_metadata(env.get_current_instance(), "class_id").unwrap().into_usize();
     let class_file = env.get_class_file(class_id);
     let methods = &class_file.methods;
@@ -99,7 +99,7 @@ fn get_declared_methods(env: &JniEnv, constructors: bool) -> usize {
         true => "java/lang/reflect/Constructor",
         false => "java/lang/reflect/Method",
     };
-    let method_type_id = env.load_class(method_class_type, false);
+    let method_type_id = env.load_class(method_class_type, false)?;
     let result_array = env.new_array(
         JavaArrayType::Object(method_type_id),
         methods
@@ -118,7 +118,7 @@ fn get_declared_methods(env: &JniEnv, constructors: bool) -> usize {
         if !constructors && (method_name == "<init>" || method_name == "<clinit>") {
             continue;
         }
-        let reflected_method = env.new_instance(method_type_id);
+        let reflected_method = env.new_instance(method_type_id)?;
         let method_name_interned = env.new_interned_string(method_name);
         env.set_field(reflected_method, "clazz", JavaValue::Object(Some(env.get_current_instance())));
         env.set_field(reflected_method, "slot", JavaValue::Int(starting_offset as i32 + i as i32));
@@ -131,18 +131,18 @@ fn get_declared_methods(env: &JniEnv, constructors: bool) -> usize {
         let descriptor = MethodDescriptor::new(signature).unwrap();
 
         let parameter_types = env.new_array(
-            JavaArrayType::Object(env.load_class("java/lang/Class", false)),
+            JavaArrayType::Object(env.load_class("java/lang/Class", false)?),
             descriptor.argument_types.len(),
         );
         for i in 0..descriptor.argument_types.len() {
-            let param_type_id = env.load_class(&descriptor.argument_types[i], false);
+            let param_type_id = env.load_class(&descriptor.argument_types[i], false)?;
             let param_type_class = env.get_class_object(param_type_id);
             env.set_array_element(parameter_types, i, JavaValue::Object(Some(param_type_class)));
         }
         env.set_field(reflected_method, "parameterTypes", JavaValue::Array(parameter_types));
 
         if !constructors {
-            let return_type_id = env.load_class(&descriptor.return_type, false);
+            let return_type_id = env.load_class(&descriptor.return_type, false)?;
             let return_type_class = env.get_class_object(return_type_id);
             env.set_field(reflected_method, "returnType", JavaValue::Object(Some(return_type_class)));
         }
@@ -150,12 +150,12 @@ fn get_declared_methods(env: &JniEnv, constructors: bool) -> usize {
         env.set_array_element(result_array, i, JavaValue::Object(Some(reflected_method)));
     }
 
-    result_array
+    Ok(result_array)
 }
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getDeclaredConstructors0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let constructors = get_declared_methods(env, true);
+    let constructors = get_declared_methods(env, true)?;
     Ok(Some(JavaValue::Array(constructors)))
 }
 
@@ -174,10 +174,10 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
         superclass = env.get_superclass(sc_id);
     }
 
-    let field_type_id = env.load_class("java/lang/reflect/Field", false);
+    let field_type_id = env.load_class("java/lang/reflect/Field", false)?;
     let result_array = env.new_array(JavaArrayType::Object(field_type_id), fields.len());
     for (i, field) in fields.iter().enumerate() {
-        let reflected_field = env.new_instance(field_type_id);
+        let reflected_field = env.new_instance(field_type_id)?;
         let field_name = env.new_interned_string(get_constant_string(&class_file.const_pool, field.name_index));
         env.set_field(reflected_field, "clazz", JavaValue::Object(Some(env.get_current_instance())));
         env.set_field(reflected_field, "slot", JavaValue::Int(starting_offset as i32 + i as i32));
@@ -188,7 +188,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
             field_type_name = &field_type_name[1..field_type_name.len() - 1];
         }
 
-        let field_type_id = env.load_class(field_type_name, false);
+        let field_type_id = env.load_class(field_type_name, false)?;
         let field_type_class = env.get_class_object(field_type_id);
         env.set_field(reflected_field, "type", JavaValue::Object(Some(field_type_class)));
         env.set_field(reflected_field, "modifiers", JavaValue::Int(field.access_flags.bits() as i32));

@@ -63,12 +63,12 @@ impl<'a> JniEnv<'a> {
         heap.main_thread_object
     }
 
-    pub fn load_class(&self, class: &str, initialize: bool) -> usize {
-        self.jvm.ensure_class_loaded(class, initialize).unwrap()
+    pub fn load_class(&self, class: &str, initialize: bool) -> RuntimeResult<usize> {
+        self.jvm.ensure_class_loaded(class, initialize)
     }
 
-    pub fn get_class_id(&self, class: &str) -> usize {
-        self.jvm.ensure_class_loaded(class, true).unwrap()
+    pub fn get_class_id(&self, class: &str) -> RuntimeResult<usize> {
+        self.jvm.ensure_class_loaded(class, true)
     }
 
     pub fn get_superclass(&self, subclass_id: usize) -> Option<usize> {
@@ -93,7 +93,7 @@ impl<'a> JniEnv<'a> {
     pub fn get_string(&self, str_id: usize) -> String {
         let heap = self.jvm.heap.borrow();
         let obj = heap.object_heap_map.get(&str_id).expect("invalid object ref");
-        if obj.class_id != self.get_class_id("java/lang/String") {
+        if obj.class_id != self.get_class_id("java/lang/String").unwrap() {
             panic!("invalid string ref: {:?}", obj);
         }
 
@@ -119,9 +119,9 @@ impl<'a> JniEnv<'a> {
         }
     }
 
-    pub fn new_instance(&self, class_id: usize) -> usize {
-        let obj = self.jvm.new_instance(class_id).unwrap();
-        self.jvm.heap_store_instance(obj)
+    pub fn new_instance(&self, class_id: usize) -> RuntimeResult<usize> {
+        let obj = self.jvm.new_instance(class_id)?;
+        Ok(self.jvm.heap_store_instance(obj))
     }
 
     pub fn set_static_field(&self, class_name: &str, field_name: &str, value: JavaValue) {
@@ -274,7 +274,7 @@ impl<'a> JniEnv<'a> {
     }
 }
 
-pub fn initialize(jvm: &Jvm) {
+pub fn initialize(jvm: &Jvm) -> RuntimeResult<()> {
     let virtual_frame = CallStackFrame {
         container_class: String::from("webjvm/lang/Main"),
         container_method: String::from("main()V"),
@@ -301,8 +301,8 @@ pub fn initialize(jvm: &Jvm) {
     let env = JniEnv::empty(jvm);
 
     {
-        let thread_group_class_id = env.get_class_id("java/lang/ThreadGroup");
-        let system_thread_group = env.new_instance(thread_group_class_id);
+        let thread_group_class_id = env.get_class_id("java/lang/ThreadGroup")?;
+        let system_thread_group = env.new_instance(thread_group_class_id)?;
         env.invoke_instance_method(
             InvokeType::Special,
             system_thread_group,
@@ -310,11 +310,10 @@ pub fn initialize(jvm: &Jvm) {
             "<init>",
             "()V",
             &[],
-        )
-        .unwrap();
+        )?;
 
-        let thread_class_id = env.get_class_id("java/lang/Thread");
-        let main_thread = env.new_instance(thread_class_id);
+        let thread_class_id = env.get_class_id("java/lang/Thread")?;
+        let main_thread = env.new_instance(thread_class_id)?;
         env.set_field(main_thread, "name", JavaValue::Object(Some(env.new_string("main"))));
         env.set_field(main_thread, "group", JavaValue::Object(Some(system_thread_group)));
         env.set_field(main_thread, "priority", JavaValue::Int(5));
@@ -323,6 +322,8 @@ pub fn initialize(jvm: &Jvm) {
         heap.main_thread_object = main_thread;
     }
 
-    let system_class_id = env.get_class_id("java/lang/System");
-    env.invoke_static_method(system_class_id, "initializeSystemClass", "()V", &[]).unwrap();
+    let system_class_id = env.get_class_id("java/lang/System")?;
+    env.invoke_static_method(system_class_id, "initializeSystemClass", "()V", &[])?;
+
+    Ok(())
 }

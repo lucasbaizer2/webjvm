@@ -277,7 +277,7 @@ impl Jvm {
                 let env = JniEnv::empty(self);
                 // create java.lang.Class object after registering the class
                 let lang_class_id = self.ensure_class_loaded("java/lang/Class", false)?;
-                let class_object_id = env.new_instance(lang_class_id);
+                let class_object_id = env.new_instance(lang_class_id)?;
                 env.invoke_instance_method(
                     InvokeType::Special,
                     class_object_id,
@@ -499,6 +499,12 @@ impl Jvm {
                         && top_frame.state.instruction_offset <= exception_item.end_pc as usize
                     {
                         if exception_item.catch_type == 0 {
+                            if let Some(message_str) = message {
+                                log_error(&format!("{}: {}\n{}", exception_class, message_str, stacktrace));
+                            } else {
+                                log_error(&format!("{}\n{}", exception_class, stacktrace));
+                            }
+                            
                             // TODO: finally blocks
                             return JavaThrowable::Unhandled(0);
                         }

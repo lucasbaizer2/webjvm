@@ -25,7 +25,7 @@ fn Java_sun_reflect_NativeConstructorAccessorImpl_newInstance0(env: &JniEnv) -> 
         Err(_) => Vec::new(),
     };
 
-    let new_instance = env.new_instance(constructor_declaring_class_id);
+    let new_instance = env.new_instance(constructor_declaring_class_id)?;
     env.invoke_instance_method(
         InvokeType::Special,
         new_instance,

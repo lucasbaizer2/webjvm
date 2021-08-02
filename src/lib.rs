@@ -307,7 +307,7 @@ impl WebJvmRuntime {
                 self.jvm.classpath.get_main_method().expect("no main method found on classpath");
             self.jvm.create_stack_frame(main_class, main_method).unwrap()
         };
-        exec::env::initialize(&self.jvm);
+        exec::env::initialize(&self.jvm).unwrap();
         self.jvm.push_call_stack_frame(frame);
         self.jvm.executor.step_until_stack_depth(&self.jvm, 1).unwrap();
 

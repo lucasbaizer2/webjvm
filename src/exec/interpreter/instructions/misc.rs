@@ -21,3 +21,11 @@ pub fn new(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState
 
     Ok(env.state)
 }
+
+pub fn athrow(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+    let ex = match pop!(&mut env).as_object().expect("expecting object ref") {
+        Some(obj) => obj,
+        None => return Err(env.jvm.throw_npe()),
+    };
+    Err(env.jvm.throw_exception_ref(ex))
+}

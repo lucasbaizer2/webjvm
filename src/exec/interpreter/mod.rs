@@ -141,17 +141,6 @@ impl InstructionExecutor {
         let handler = INSTRUCTION_HANDLERS[instruction as usize];
         let new_state = handler(env)?;
 
-        // match &insn.1 {
-        //     Instruction::Athrow => {
-        //         let ex = match pop!().as_object().expect("expecting object ref") {
-        //             Some(obj) => obj,
-        //             None => return Err(jvm.throw_npe()),
-        //         };
-        //         return Err(jvm.throw_exception_ref(ex));
-        //     }
-        //     x => return Err(jvm.throw_exception("webjvm/lang/UnhandledInstructionError", Some(&format!("{:?}", x)))),
-        // }
-
         let mut csf = jvm.call_stack_frames.borrow_mut();
         if csf.len() == depth {
             csf.last_mut().unwrap().state = new_state;

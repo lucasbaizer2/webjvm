@@ -24,7 +24,7 @@ fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> RuntimeResult<Option<Ja
         .invoke_instance_method(
             InvokeType::Virtual,
             *array_class,
-            env.get_class_id("java/lang/Class"),
+            env.get_class_id("java/lang/Class")?,
             "getComponentType",
             "()Ljava/lang/Class;",
             &[],
