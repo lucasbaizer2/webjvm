@@ -92,14 +92,13 @@ impl Jvm {
                 state: CallStackFrameState {
                     line_number: 0,
                     instruction_offset: 0,
-                    // lvt: vec![JavaValue::InternalUnset; mp.parameters.len()],
                     lvt: JavaValueVec::from_vec(vec![
                         JavaValue::Internal {
                             is_unset: true,
                             is_higher_bits: false
                         };
                         lvt_len
-                    ]), // TODO: fix this hacky workaround
+                    ]),
                     stack: JavaValueVec::new(),
                     return_stack_value: None,
                 },
@@ -386,28 +385,23 @@ impl Jvm {
             cls.java_type.clone()
         };
 
-        let detail_str = {
-            let env = JniEnv::empty(self);
-            let detail_field = env.get_field(reference, "detailMessage");
-
-            detail_field.as_object().unwrap().map(|id| env.get_string(id))
-        };
-
-        return self.throw_exception(&exception_class, detail_str.as_deref());
-    }
-
-    pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
         let stacktrace = {
             let csf = self.call_stack_frames.borrow();
             let mut stacktrace = String::new();
-            for i in 0..csf.len() {
+            for i in 0..csf.len() - 1 {
                 let frame = &csf[csf.len() - i - 1];
                 let source = match frame.is_native_frame {
-                    true => "<native method>",
-                    false => "<unknown source>",
+                    true => "(Native Method)",
+                    false => "(Unknown Source)",
                 };
-                writeln!(&mut stacktrace, "    at {}.{}:{}", frame.container_class, frame.container_method, source)
-                    .unwrap();
+                writeln!(
+                    &mut stacktrace,
+                    "\tat {}.{}{}",
+                    &frame.container_class[frame.container_class.rfind('/').map(|x| x + 1).unwrap_or(0)..],
+                    &frame.container_method[0..frame.container_method.find('(').unwrap()],
+                    source
+                )
+                .unwrap();
             }
             stacktrace
         };
@@ -418,28 +412,26 @@ impl Jvm {
                 break;
             }
             let top_frame = csf.last_mut().unwrap();
-            if let Some(metadata) = top_frame.metadata.as_ref() {
-                for exception_item in &metadata.exception_table {
-                    if top_frame.state.instruction_offset >= exception_item.start_pc as usize
-                        && top_frame.state.instruction_offset <= exception_item.end_pc as usize
-                    {
-                        if exception_item.catch_type == 0 {
-                            if let Some(message_str) = message {
-                                log_error(&format!("{}: {}\n{}", exception_class, message_str, stacktrace));
-                            } else {
-                                log_error(&format!("{}\n{}", exception_class, stacktrace));
+            'b: {
+                if let Some(metadata) = top_frame.metadata.as_ref() {
+                    for exception_item in &metadata.exception_table {
+                        if top_frame.state.instruction_offset >= exception_item.start_pc as usize
+                            && top_frame.state.instruction_offset <= exception_item.end_pc as usize
+                        {
+                            if exception_item.catch_type == 0 {
+                                // TODO: finally blocks
+                                break 'b;
                             }
-
-                            // TODO: finally blocks
-                            return JavaThrowable::Unhandled(0);
-                        }
-                        let container_class = self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
-                        let catch_type = get_constant_string(&container_class.const_pool, exception_item.catch_type);
-                        // TODO: make this polymorphic
-                        if exception_class == catch_type {
-                            // let top_frame_mut = csf
-                            top_frame.state.instruction_offset = exception_item.handler_pc as usize;
-                            return JavaThrowable::Handled(0);
+                            let container_class =
+                                self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
+                            let catch_type =
+                                get_constant_string(&container_class.const_pool, exception_item.catch_type);
+                            // TODO: make this polymorphic
+                            if &exception_class == catch_type {
+                                // let top_frame_mut = csf
+                                top_frame.state.instruction_offset = exception_item.handler_pc as usize;
+                                return JavaThrowable::Handled(0);
+                            }
                         }
                     }
                 }
@@ -447,13 +439,47 @@ impl Jvm {
             csf.pop().unwrap();
         }
 
-        if let Some(message_str) = message {
-            log_error(&format!("{}: {}\n{}", exception_class, message_str, stacktrace));
+        let detail_str = {
+            let env = JniEnv::empty(self);
+            let detail_field = env.get_field(reference, "detailMessage");
+
+            detail_field.as_object().unwrap().map(|id| env.get_string(id))
+        };
+
+        let exception_class = exception_class.replace("/", ".");
+        if let Some(detail) = detail_str {
+            log_error(&format!("Exception in thread \"main\" {}: {}\n{}", exception_class, detail, stacktrace));
         } else {
-            log_error(&format!("{}\n{}", exception_class, stacktrace));
+            log_error(&format!("Exception in thread \"main\" {}\n{}", exception_class, stacktrace));
         }
 
-        JavaThrowable::Unhandled(0)
+        JavaThrowable::Unhandled(reference)
+    }
+
+    pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
+        let env = JniEnv::empty(self);
+        let cid = env.get_class_id(exception_class).unwrap();
+        let ex_ref = env.new_instance(cid).unwrap();
+
+        match message {
+            Some(msg_str) => {
+                let message_internal_str = env.new_string(msg_str);
+                env.invoke_instance_method(
+                    InvokeType::Special,
+                    ex_ref,
+                    cid,
+                    "<init>",
+                    "(Ljava/lang/String;)V",
+                    &[JavaValue::Object(Some(message_internal_str))],
+                )
+                .unwrap();
+            }
+            None => {
+                env.invoke_instance_method(InvokeType::Special, ex_ref, cid, "<init>", "()V", &[]).unwrap();
+            }
+        }
+
+        self.throw_exception_ref(ex_ref)
     }
 
     pub fn new_instance(&self, root_class_id: usize) -> RuntimeResult<JavaObject> {

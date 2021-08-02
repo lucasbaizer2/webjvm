@@ -206,10 +206,11 @@ impl Classpath {
     }
 
     pub fn get_main_method(&self) -> Option<(&ClassFile, &MethodInfo)> {
-        let mut classes: Vec<&ClassFile> = self.class_files.values().collect();
-        classes.reverse();
-
-        for file in classes {
+        for file in self.class_files.values() {
+            let class_name = get_constant_string(&file.const_pool, file.this_class);
+            if class_name.starts_with("java") || class_name.starts_with("sun") || class_name.starts_with("com/sun") {
+                continue;
+            }
             if let Some(main_method) = self.get_static_method(file, "main", "([Ljava/lang/String;)V") {
                 return Some((file, main_method.1));
             }
@@ -307,6 +308,7 @@ impl WebJvmRuntime {
                 self.jvm.classpath.get_main_method().expect("no main method found on classpath");
             self.jvm.create_stack_frame(main_class, main_method).unwrap()
         };
+
         exec::env::initialize(&mut self.jvm).unwrap();
         self.jvm.push_call_stack_frame(frame);
         self.jvm.executor.step_until_stack_depth(&self.jvm, 1).unwrap();

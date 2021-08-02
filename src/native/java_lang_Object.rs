@@ -10,15 +10,12 @@ fn Java_java_lang_Object_registerNatives(_: &JniEnv) -> RuntimeResult<Option<Jav
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Object_hashCode(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let mut x = match &env.parameters[0] {
-        JavaValue::Array(id) => *id,
-        JavaValue::Object(obj) => *obj.as_ref().unwrap(),
-        _ => panic!(),
-    };
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = (x >> 16) ^ x;
-    Ok(Some(JavaValue::Int(x as i32)))
+    env.invoke_static_method(
+        env.get_class_id("java/lang/System")?,
+        "identityHashCode",
+        "(Ljava/lang/Object;)I",
+        &[JavaValue::Object(Some(env.get_current_instance()))],
+    )
 }
 
 #[allow(non_snake_case)]

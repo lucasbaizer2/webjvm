@@ -13,5 +13,9 @@ public class MainTest {
         }
         timeTook = System.currentTimeMillis() - time;
         System.out.println("Took " + timeTook + "ms to count to one million.");
+
+        new RuntimeException("printStackTrace()").printStackTrace();
+
+        throw new RuntimeException("Exiting by throwing an exception.");
     }
 }

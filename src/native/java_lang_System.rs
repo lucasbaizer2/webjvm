@@ -16,7 +16,7 @@ fn Java_java_lang_System_currentTimeMillis(_: &JniEnv) -> RuntimeResult<Option<J
     #[cfg(not(target_arch = "wasm32"))]
     {
         use std::time::{SystemTime, UNIX_EPOCH};
-        return Ok(Some(JavaValue::Long(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64)));
+        Ok(Some(JavaValue::Long(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64)))
     }
 }
 
@@ -115,6 +115,19 @@ fn Java_java_lang_System_mapLibraryName(env: &JniEnv) -> RuntimeResult<Option<Ja
     Ok(Some(JavaValue::Object(Some(java_str))))
 }
 
+#[allow(non_snake_case)]
+fn Java_java_lang_System_identityHashCode(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let mut x = match &env.parameters[0] {
+        JavaValue::Array(id) => *id,
+        JavaValue::Object(obj) => *obj.as_ref().unwrap(),
+        _ => panic!(),
+    };
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    Ok(Some(JavaValue::Int(x as i32)))
+}
+
 pub fn initialize(cp: &mut Classpath) {
     register_jni!(
         cp,
@@ -126,6 +139,7 @@ pub fn initialize(cp: &mut Classpath) {
         Java_java_lang_System_setIn0,
         Java_java_lang_System_setOut0,
         Java_java_lang_System_setErr0,
-        Java_java_lang_System_mapLibraryName
+        Java_java_lang_System_mapLibraryName,
+        Java_java_lang_System_identityHashCode
     );
 }
