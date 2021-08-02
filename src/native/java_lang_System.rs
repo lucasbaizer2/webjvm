@@ -1,5 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::{
     model::{JavaValue, RuntimeResult},
     Classpath, InvokeType, JniEnv,
@@ -16,7 +14,10 @@ fn Java_java_lang_System_currentTimeMillis(_: &JniEnv) -> RuntimeResult<Option<J
     return Ok(Some(JavaValue::Long(js_sys::Date::now() as i64)));
 
     #[cfg(not(target_arch = "wasm32"))]
-    return Ok(Some(JavaValue::Long(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64)));
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        return Ok(Some(JavaValue::Long(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64)));
+    }
 }
 
 #[allow(non_snake_case)]

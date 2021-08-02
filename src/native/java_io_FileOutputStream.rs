@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use crate::{
     exec::env::JniEnv,
     model::{JavaValue, RuntimeResult},
@@ -38,6 +36,7 @@ fn Java_java_io_FileOutputStream_writeBytes(env: &JniEnv) -> RuntimeResult<Optio
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            use std::io::Write;
             if fd == 1 {
                 let mut stdout = std::io::stdout();
                 stdout.write_all(&local_buffer).unwrap();
