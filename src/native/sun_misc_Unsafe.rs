@@ -14,7 +14,7 @@ fn Java_sun_misc_Unsafe_registerNatives(_: &JniEnv) -> RuntimeResult<Option<Java
 
 #[allow(non_snake_case)]
 fn Java_sun_misc_Unsafe_arrayBaseOffset(_: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    Ok(Some(JavaValue::Long(0)))
+    Ok(Some(JavaValue::Int(0)))
 }
 
 #[allow(non_snake_case)]
@@ -32,18 +32,22 @@ fn Java_sun_misc_Unsafe_arrayIndexScale(env: &JniEnv) -> RuntimeResult<Option<Ja
         .unwrap()
     {
         JavaValue::Object(obj) => match obj {
-            Some(component_type) => {
-                match env.get_internal_metadata(component_type, "class_name").unwrap().into_string().as_str() {
-                    "byte" => 1,
-                    "short" => 2,
-                    "int" => 4,
-                    "long" => 8,
-                    "float" => 4,
-                    "double" => 8,
-                    "char" => 2,
-                    "boolean" => 1,
-                    _ => ADDRESS_SIZE,
-                }
+            Some(_component_type) => {
+                1
+
+                // size_of::<JavaValue>() as i32
+
+                // match env.get_internal_metadata(component_type, "class_name").unwrap().into_string().as_str() {
+                //     "byte" => 1,
+                //     "short" => 2,
+                //     "int" => 4,
+                //     "long" => 8,
+                //     "float" => 4,
+                //     "double" => 8,
+                //     "char" => 2,
+                //     "boolean" => 1,
+                //     _ => ADDRESS_SIZE,
+                // }
             }
             None => {
                 return Err(env.throw_exception("java/lang/InvalidClassCastException", Some("expecting array type")))
@@ -67,54 +71,81 @@ fn Java_sun_misc_Unsafe_objectFieldOffset(env: &JniEnv) -> RuntimeResult<Option<
     Ok(Some(JavaValue::Long(name as i64)))
 }
 
-fn get_value_at_offset(env: &JniEnv, obj: usize, offset: i64) -> JavaValue {
-    let field_name = env.get_string(offset as usize);
+fn get_value_at_offset(env: &JniEnv, container: &JavaValue, offset: i64) -> JavaValue {
+    if container.is_array() {
+        let array_id = env.parameters[1].as_array().unwrap();
+        let pointer = env.parameters[2].as_long().unwrap() as usize;
 
-    let heap = env.jvm.heap.borrow();
-    let internal_obj = heap.object_heap_map.get(&obj).unwrap();
-    internal_obj.instance_fields.get(&field_name).unwrap().clone()
+        env.get_array_element(array_id, pointer)
+    } else {
+        let obj = container.as_object().unwrap().unwrap();
+        let field_name = env.get_string(offset as usize);
+
+        let heap = env.jvm.heap.borrow();
+        let internal_obj = heap.object_heap_map.get(&obj).unwrap();
+        internal_obj.instance_fields.get(&field_name).unwrap().clone()
+    }
 }
 
-fn set_value_at_offset(env: &JniEnv, obj: usize, offset: i64, value: JavaValue) {
-    let field_name = env.get_string(offset as usize);
+fn set_value_at_offset(env: &JniEnv, container: &JavaValue, offset: i64, value: JavaValue) {
+    if container.is_array() {
+        let array_id = env.parameters[1].as_array().unwrap();
+        let pointer = env.parameters[2].as_long().unwrap() as usize;
 
-    let mut heap = env.jvm.heap.borrow_mut();
-    let internal_obj = heap.object_heap_map.get_mut(&obj).unwrap();
-    internal_obj.instance_fields.insert(field_name, value);
+        env.set_array_element(array_id, pointer, value);
+    } else {
+        let obj = container.as_object().unwrap().unwrap();
+        let field_name = env.get_string(offset as usize);
+
+        let mut heap = env.jvm.heap.borrow_mut();
+        let internal_obj = heap.object_heap_map.get_mut(&obj).unwrap();
+        internal_obj.instance_fields.insert(field_name, value);
+    }
 }
 
-fn cas(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let obj = env.parameters[1].as_object().unwrap().unwrap();
+fn cas(env: &JniEnv, type_size: usize) -> RuntimeResult<Option<JavaValue>> {
+    let container = &env.parameters[1];
     let offset = env.parameters[2].as_long().unwrap();
     let expect = env.parameters[4].clone();
-    let update = env.parameters[5].clone();
+    let update = env.parameters[4 + type_size].clone();
 
-    let current_field = get_value_at_offset(env, obj, offset);
+    let current_field = get_value_at_offset(env, container, offset);
     if current_field == expect {
-        set_value_at_offset(env, obj, offset, update);
+        set_value_at_offset(env, container, offset, update);
         Ok(Some(JavaValue::Boolean(true)))
     } else {
         Ok(Some(JavaValue::Boolean(false)))
     }
 }
 
-#[allow(non_snake_case)]
-fn Java_sun_misc_Unsafe_compareAndSwapObject(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    cas(env)
+fn get_value_volatile(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    let obj = &env.parameters[1];
+    let offset = env.parameters[2].as_long().unwrap();
+    let current_field = get_value_at_offset(env, obj, offset);
+    Ok(Some(current_field))
 }
 
-#[allow(non_snake_case)]
-fn Java_sun_misc_Unsafe_compareAndSwapInt(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    cas(env)
+macro_rules! define_cas {
+    ( $fname:ident, $type_size:literal ) => {
+        #[allow(non_snake_case)]
+        fn $fname(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+            cas(env, $type_size)
+        }
+    };
 }
+
+define_cas!(Java_sun_misc_Unsafe_compareAndSwapObject, 1);
+define_cas!(Java_sun_misc_Unsafe_compareAndSwapInt, 1);
+define_cas!(Java_sun_misc_Unsafe_compareAndSwapLong, 2);
 
 #[allow(non_snake_case)]
 fn Java_sun_misc_Unsafe_getIntVolatile(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let obj = env.parameters[1].as_object().unwrap().unwrap();
-    let offset = env.parameters[2].as_long().unwrap();
+    get_value_volatile(env)
+}
 
-    let current_field = get_value_at_offset(env, obj, offset);
-    Ok(Some(current_field))
+#[allow(non_snake_case)]
+fn Java_sun_misc_Unsafe_getObjectVolatile(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
+    get_value_volatile(env)
 }
 
 #[allow(non_snake_case)]
@@ -173,7 +204,9 @@ pub fn initialize(cp: &mut Classpath) {
         Java_sun_misc_Unsafe_objectFieldOffset,
         Java_sun_misc_Unsafe_compareAndSwapObject,
         Java_sun_misc_Unsafe_compareAndSwapInt,
+        Java_sun_misc_Unsafe_compareAndSwapLong,
         Java_sun_misc_Unsafe_getIntVolatile,
+        Java_sun_misc_Unsafe_getObjectVolatile,
         Java_sun_misc_Unsafe_allocateMemory,
         Java_sun_misc_Unsafe_freeMemory,
         Java_sun_misc_Unsafe_putLong,

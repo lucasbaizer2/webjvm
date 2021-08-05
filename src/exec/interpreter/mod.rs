@@ -7,7 +7,7 @@ mod instructions;
 pub type InstructionHandler = fn(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState>;
 
 pub fn empty_instruction_handler(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    Err(env.jvm.throw_exception("webjvm/lang/UnhandledInstructionError", Some(&format!("0x{:x?}", env.instruction))))
+    Err(env.jvm.throw_exception("java/lang/Error", Some(&format!("Unhandled instruction: 0x{:x?}", env.instruction))))
 }
 
 lazy_static! {

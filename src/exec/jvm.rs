@@ -215,7 +215,7 @@ impl Jvm {
                             let class_file = match self.classpath.get_classpath_entry(cls) {
                                 Some(file) => file,
                                 None => {
-                                    return Err(self.throw_exception("java/lang/NoClassDefError", Some(cls)));
+                                    return Err(self.throw_exception("java/lang/NoClassDefFoundError", Some(cls)));
                                 }
                             };
 
@@ -325,7 +325,7 @@ impl Jvm {
         let cls = self.get_class_name_from_id(class_id);
         let class_file = match self.classpath.get_classpath_entry(&cls) {
             Some(file) => file,
-            None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(&cls))),
+            None => return Err(self.throw_exception("java/lang/NoClassDefFoundError", Some(&cls))),
         };
 
         if class_file.super_class != 0 {
@@ -362,7 +362,9 @@ impl Jvm {
 
             let cls = match self.classpath.get_classpath_entry(&current_class.java_type) {
                 Some(file) => file,
-                None => return Err(self.throw_exception("java/lang/NoClassDefError", Some(&current_class.java_type))),
+                None => {
+                    return Err(self.throw_exception("java/lang/NoClassDefFoundError", Some(&current_class.java_type)))
+                }
             };
             if cls.super_class == 0 {
                 break 'l superclass == "java/lang/Object";
@@ -457,6 +459,11 @@ impl Jvm {
     }
 
     pub fn throw_exception(&self, exception_class: &str, message: Option<&str>) -> JavaThrowable {
+        // check to see if the exception class exists, otherwise we get an infinitely recursive loop
+        if self.classpath.get_classpath_entry(exception_class).is_none() {
+            return self.throw_exception("java/lang/NoClassDefFoundError", Some(exception_class));
+        }
+
         let env = JniEnv::empty(self);
         let cid = env.get_class_id(exception_class).unwrap();
         let ex_ref = env.new_instance(cid).unwrap();

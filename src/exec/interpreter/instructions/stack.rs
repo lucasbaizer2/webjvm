@@ -10,8 +10,7 @@ pub fn pop(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState
 }
 
 pub fn pop2(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    pop!(&mut env);
-    env.state.stack.pop();
+    pop_full!(&mut env);
 
     Ok(env.state)
 }
@@ -24,12 +23,8 @@ pub fn dup(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState
 }
 
 pub fn dup2(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let top = env.state.stack.last().expect("stack underflow").clone();
-    if env.state.stack.len() > 1 {
-        let under_top = env.state.stack[env.state.stack.len() - 2].clone();
-        env.state.stack.push(under_top);
-    }
-    env.state.stack.push(top);
+    let top = env.state.stack.last_full().expect("stack underflow").clone();
+    env.state.stack.push(top.clone());
 
     Ok(env.state)
 }

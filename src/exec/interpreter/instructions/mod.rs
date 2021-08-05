@@ -65,7 +65,7 @@ macro_rules! pop {
     ( $env:expr ) => {{
         match $env.state.stack.pop() {
             Some(val) => val,
-            None => return Err($env.jvm.throw_exception("webjvm/lang/StackUnderflowError", None)),
+            None => return Err($env.jvm.throw_exception("java/lang/Error", Some("stack underflow"))),
         }
     }};
 }

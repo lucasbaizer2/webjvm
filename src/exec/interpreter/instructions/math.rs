@@ -82,7 +82,10 @@ macro_rules! define_cast {
             use paste::paste;
 
             paste! {
-                let int = pop_full!(&mut env).[<as_ $from>]().expect("expecting value");
+                let int = match pop_full!(&mut env).[<as_ $from>]() {
+                    Ok(e) => e,
+                    Err(_) => panic!(),
+                };
                 env.state.stack.push(JavaValue::$jt(int as $cast));
 
                 Ok(env.state)

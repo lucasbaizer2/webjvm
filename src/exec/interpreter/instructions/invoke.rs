@@ -71,7 +71,7 @@ fn create_stack_frame(
     let declaring_class = match env.jvm.classpath.get_classpath_entry(declaring_class_name.as_str()) {
         Some(file) => file,
         None => {
-            return Err(env.jvm.throw_exception("java/lang/NoClassDefError", Some(&declaring_class_name)));
+            return Err(env.jvm.throw_exception("java/lang/NoClassDefFoundError", Some(&declaring_class_name)));
         }
     };
     let (method_class, method) =

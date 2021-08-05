@@ -129,10 +129,19 @@ impl Classpath {
         method_name: &str,
         method_descriptor: &str,
     ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
+        // from how I understand it, a special invokation is identical to a virtual one,
+        // except the class at the bottom of the inheritance tree is explicity defined
+        // and not assumed from the type of the instance being invoked on
+        // thus, this method interprets special and virual invocations as the same,
+        // since callers of this function must explicity define the bottom of the inheritance tree
+        // with the invoke_type parameter
+
         match invoke_type {
-            InvokeType::Special => self.get_special_method(declaring_class, method_name, method_descriptor),
+            // InvokeType::Virtual => self.get_special_method(declaring_class, method_name, method_descriptor),
             InvokeType::Static => self.get_static_method(declaring_class, method_name, method_descriptor),
-            InvokeType::Virtual => self.get_virtual_method(declaring_class, method_name, method_descriptor),
+            InvokeType::Special | InvokeType::Virtual => {
+                self.get_virtual_method(declaring_class, method_name, method_descriptor)
+            }
         }
     }
 
@@ -203,20 +212,6 @@ impl Classpath {
                 false
             })
             .map(|method| (declaring_class, method))
-    }
-
-    pub fn get_main_method(&self) -> Option<(&ClassFile, &MethodInfo)> {
-        for file in self.class_files.values() {
-            let class_name = get_constant_string(&file.const_pool, file.this_class);
-            if class_name.starts_with("java") || class_name.starts_with("sun") || class_name.starts_with("com/sun") {
-                continue;
-            }
-            if let Some(main_method) = self.get_static_method(file, "main", "([Ljava/lang/String;)V") {
-                return Some((file, main_method.1));
-            }
-        }
-
-        None
     }
 }
 
@@ -302,10 +297,15 @@ impl WebJvmRuntime {
     }
 
     #[wasm_bindgen(method, js_class = "WebJvmRuntime", js_name = executeMain)]
-    pub fn execute_main(&mut self) -> Result<(), JsValue> {
+    pub fn execute_main(&mut self, class_name: &str) -> Result<(), JsValue> {
         let frame = {
-            let (main_class, main_method) =
-                self.jvm.classpath.get_main_method().expect("no main method found on classpath");
+            let main_class = self.jvm.classpath.get_classpath_entry(class_name).expect("main class not found");
+            let main_method = self
+                .jvm
+                .classpath
+                .get_static_method(main_class, "main", "([Ljava/lang/String;)V")
+                .expect("main method not found")
+                .1;
             self.jvm.create_stack_frame(main_class, main_method).unwrap()
         };
 
@@ -331,7 +331,7 @@ mod tests {
         let mut total = 0;
         for i in 0..0xca {
             if INSTRUCTION_HANDLERS[i] as usize == empty_instruction_handler as usize {
-                println!("Unhandled opcode: 0x:{:x?}", i);
+                println!("Unhandled opcode: 0x{:x?}", i);
                 total += 1;
             }
         }
@@ -348,7 +348,7 @@ mod tests {
 
         println!("Executing JVM...");
         let mut rt = WebJvmRuntime::new(cp);
-        rt.execute_main().unwrap();
+        rt.execute_main("MainTest").unwrap();
         println!("Finished executing!");
     }
 }

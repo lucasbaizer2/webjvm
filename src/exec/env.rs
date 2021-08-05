@@ -104,14 +104,7 @@ impl<'a> JniEnv<'a> {
                 let array = &heap.array_heap_map[ptr];
 
                 String::from_utf16(
-                    &array
-                        .values
-                        .iter()
-                        .map(|x| match x {
-                            JavaValue::Char(val) => *val,
-                            _ => panic!("invalid array item"),
-                        })
-                        .collect::<Vec<u16>>(),
+                    &array.values.iter().map(|x| x.as_int().expect("invalid array item") as u16).collect::<Vec<u16>>(),
                 )
                 .expect("invalid string encoding")
             }
@@ -268,7 +261,7 @@ impl<'a> JniEnv<'a> {
     pub fn get_class_file(&self, class_id: usize) -> &ClassFile {
         let class_name = self.jvm.get_class_name_from_id(class_id);
         self.jvm.classpath.get_classpath_entry(&class_name).unwrap_or_else(|| {
-            self.jvm.throw_exception("java/lang/NoClassDefError", Some(&class_name));
+            self.jvm.throw_exception("java/lang/NoClassDefFoundError", Some(&class_name));
             panic!();
         })
     }

@@ -293,6 +293,18 @@ impl JavaValueVec {
                     }
                     None => String::from("null"),
                 },
+                JavaValue::Internal {
+                    is_unset,
+                    is_higher_bits,
+                } => {
+                    if *is_unset {
+                        String::from("Unset")
+                    } else if *is_higher_bits {
+                        String::from("HigherBits")
+                    } else {
+                        String::from("Internal")
+                    }
+                }
                 other => format!("{:?}", other),
             })
             .collect();
