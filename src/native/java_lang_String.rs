@@ -5,7 +5,7 @@ use crate::{
 
 #[allow(non_snake_case)]
 fn Java_java_lang_String_intern(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let current_string = env.get_string(env.get_current_instance());
+    let current_string = env.get_string(env.get_current_instance()?);
     let intern_id = match {
         let heap = env.jvm.heap.borrow();
         heap.interned_string_map.get(&current_string).cloned()

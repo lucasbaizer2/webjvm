@@ -151,7 +151,7 @@ impl Classpath {
         method_name: &str,
         method_descriptor: &str,
     ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
-        self.get_special_method(declaring_class, method_name, method_descriptor).or_else(|| {
+        self.get_direct_method(declaring_class, method_name, method_descriptor, false).or_else(|| {
             if declaring_class.super_class == 0 {
                 None
             } else {
@@ -168,44 +168,40 @@ impl Classpath {
         method_name: &str,
         method_descriptor: &str,
     ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
-        declaring_class
-            .methods
-            .iter()
-            .find(|method| {
-                if method.access_flags.contains(MethodAccessFlags::STATIC) {
-                    let current_name = get_constant_string(&declaring_class.const_pool, method.name_index);
-                    if current_name == method_name {
-                        let current_descriptor =
-                            get_constant_string(&declaring_class.const_pool, method.descriptor_index);
-                        if current_descriptor == method_descriptor {
-                            return true;
-                        }
-                    }
-                }
-
-                false
-            })
-            .map(|method| (declaring_class, method))
+        self.get_direct_method(declaring_class, method_name, method_descriptor, true).or_else(|| {
+            if declaring_class.super_class == 0 {
+                None
+            } else {
+                let superclass_name = get_constant_string(&declaring_class.const_pool, declaring_class.super_class);
+                let superclass = self.get_classpath_entry(superclass_name).expect("class not found");
+                self.get_static_method(superclass, method_name, method_descriptor)
+            }
+        })
     }
 
-    pub fn get_special_method<'a>(
+    fn get_direct_method<'a>(
         &'a self,
         declaring_class: &'a ClassFile,
         method_name: &str,
         method_descriptor: &str,
+        is_static: bool,
     ) -> Option<(&'a ClassFile, &'a MethodInfo)> {
         declaring_class
             .methods
             .iter()
             .find(|method| {
-                if !method.access_flags.contains(MethodAccessFlags::STATIC) {
-                    let current_name = get_constant_string(&declaring_class.const_pool, method.name_index);
-                    if current_name == method_name {
-                        let current_descriptor =
-                            get_constant_string(&declaring_class.const_pool, method.descriptor_index);
-                        if current_descriptor == method_descriptor {
-                            return true;
-                        }
+                if method.access_flags.contains(MethodAccessFlags::STATIC) {
+                    if !is_static {
+                        return false;
+                    }
+                } else if is_static {
+                    return false;
+                }
+                let current_name = get_constant_string(&declaring_class.const_pool, method.name_index);
+                if current_name == method_name {
+                    let current_descriptor = get_constant_string(&declaring_class.const_pool, method.descriptor_index);
+                    if current_descriptor == method_descriptor {
+                        return true;
                     }
                 }
 

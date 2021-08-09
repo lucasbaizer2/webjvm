@@ -1,47 +1,48 @@
-use crate::{
-    exec::interpreter::InstructionEnvironment,
-    model::{CallStackFrameState, RuntimeResult},
-};
+use crate::{exec::interpreter::InstructionEnvironment, model::RuntimeResult};
 
-pub fn pop(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    pop!(&mut env);
+pub fn pop(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    pop!(env);
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn pop2(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    pop_full!(&mut env);
+pub fn pop2(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    pop_full!(env);
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn dup(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn dup(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     let top = env.state.stack.last().expect("stack underflow").clone();
     env.state.stack.push(top);
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn dup2(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn dup2(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     let top = env.state.stack.last_full().expect("stack underflow").clone();
-    env.state.stack.push(top.clone());
+    if !top.is_wide() {
+        let under_top = env.state.stack[env.state.stack.len() - 2].clone();
+        env.state.stack.push(under_top);
+    }
+    env.state.stack.push(top);
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn dupx1(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn dupx1(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     let top = env.state.stack.last().expect("stack underflow").clone();
     env.state.stack.insert(env.state.stack.len() - 2, top);
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn swap(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let top = pop!(&mut env);
-    let under_top = pop!(&mut env);
+pub fn swap(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let top = pop!(env);
+    let under_top = pop!(env);
 
     env.state.stack.push(top);
     env.state.stack.push(under_top);
 
-    Ok(env.state)
+    Ok(())
 }

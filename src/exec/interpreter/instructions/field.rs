@@ -2,18 +2,18 @@ use classfile_parser::constant_info::ConstantInfo;
 
 use crate::{
     exec::interpreter::InstructionEnvironment,
-    model::{CallStackFrameState, JavaClass, JavaValue, RuntimeResult},
+    model::{JavaClass, JavaValue, RuntimeResult},
     util::{get_constant_name_and_type, get_constant_string},
 };
 
-pub fn getfield(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (field_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn getfield(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (field_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     match &const_pool[field_ref_id as usize - 1] {
         ConstantInfo::FieldRef(fr) => {
             let field_str = get_constant_name_and_type(const_pool, fr.name_and_type_index);
 
-            let instance_id = match pop!(&mut env) {
+            let instance_id = match pop!(env) {
                 JavaValue::Object(id) => match id {
                     Some(val) => val,
                     None => return Err(env.jvm.throw_npe()),
@@ -30,18 +30,18 @@ pub fn getfield(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrame
         x => panic!("bad field ref: {:?}", x),
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn putfield(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (field_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn putfield(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (field_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     match &const_pool[field_ref_id as usize - 1] {
         ConstantInfo::FieldRef(fr) => {
             let field_str = get_constant_name_and_type(const_pool, fr.name_and_type_index);
 
-            let value = pop_full!(&mut env);
-            let instance_id = match pop!(&mut env) {
+            let value = pop_full!(env);
+            let instance_id = match pop!(env) {
                 JavaValue::Object(id) => match id {
                     Some(val) => val,
                     None => return Err(env.jvm.throw_npe()),
@@ -57,12 +57,12 @@ pub fn putfield(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrame
         x => panic!("bad field ref: {:?}", x),
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn getstatic(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (field_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn getstatic(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (field_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     match &const_pool[field_ref_id as usize - 1] {
         ConstantInfo::FieldRef(fr) => {
             let class_str = get_constant_string(const_pool, fr.class_index);
@@ -74,21 +74,21 @@ pub fn getstatic(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
         x => panic!("bad field ref: {:?}", x),
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn putstatic(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (field_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn putstatic(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (field_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     match &const_pool[field_ref_id as usize - 1] {
         ConstantInfo::FieldRef(fr) => {
             let class_str = get_constant_string(const_pool, fr.class_index);
             let field_str = get_constant_name_and_type(const_pool, fr.name_and_type_index);
 
-            JavaClass::set_static_field(env.jvm, class_str, field_str.0, pop_full!(&mut env))?;
+            JavaClass::set_static_field(env.jvm, class_str, field_str.0, pop_full!(env))?;
         }
         x => panic!("bad field ref: {:?}", x),
     }
 
-    Ok(env.state)
+    Ok(())
 }

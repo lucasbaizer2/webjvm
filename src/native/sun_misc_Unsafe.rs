@@ -150,7 +150,7 @@ fn Java_sun_misc_Unsafe_getObjectVolatile(env: &JniEnv) -> RuntimeResult<Option<
 
 #[allow(non_snake_case)]
 fn Java_sun_misc_Unsafe_allocateMemory(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let instance = env.get_current_instance();
+    let instance = env.get_current_instance()?;
     let block_size = env.parameters[1].as_long().unwrap();
     let mut buf: Vec<u8> = Vec::with_capacity(block_size as usize);
     let ptr = buf.as_mut_ptr();
@@ -164,7 +164,7 @@ fn Java_sun_misc_Unsafe_allocateMemory(env: &JniEnv) -> RuntimeResult<Option<Jav
 
 #[allow(non_snake_case)]
 fn Java_sun_misc_Unsafe_freeMemory(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let instance = env.get_current_instance();
+    let instance = env.get_current_instance()?;
     let address = env.parameters[1].as_long().unwrap() as *mut u8;
     let block_size = env.remove_internal_metadata(instance, &(address as i64).to_string()).unwrap().into_usize();
 

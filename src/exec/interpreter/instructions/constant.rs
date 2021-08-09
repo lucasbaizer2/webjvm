@@ -2,15 +2,15 @@ use classfile_parser::constant_info::ConstantInfo;
 
 use crate::{
     exec::interpreter::InstructionEnvironment,
-    model::{CallStackFrameState, JavaValue, RuntimeResult},
+    model::{JavaValue, RuntimeResult},
     util::get_constant_string,
 };
 
 macro_rules! define_const {
     ( $opcode:ident, $const_type:ident, $value:expr ) => {
-        pub fn $opcode(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+        pub fn $opcode(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
             env.state.stack.push(JavaValue::$const_type($value));
-            Ok(env.state)
+            Ok(())
         }
     };
 }
@@ -69,32 +69,32 @@ fn push_constant(
     Ok(())
 }
 
-pub fn ldc(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (constant_id,) = take_values!(&mut env, u8);
-    let const_pool = use_const_pool!(&mut env);
-    push_constant(&mut env, const_pool, constant_id as usize)?;
+pub fn ldc(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (constant_id,) = take_values!(env, u8);
+    let const_pool = use_const_pool!(env);
+    push_constant(env, const_pool, constant_id as usize)?;
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn ldcw(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (constant_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
-    push_constant(&mut env, const_pool, constant_id as usize)?;
+pub fn ldcw(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (constant_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
+    push_constant(env, const_pool, constant_id as usize)?;
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn bipush(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (val,) = take_values!(&mut env, i8);
+pub fn bipush(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (val,) = take_values!(env, i8);
     env.state.stack.push(JavaValue::Int(val as i32));
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn sipush(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (val,) = take_values!(&mut env, i16);
+pub fn sipush(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (val,) = take_values!(env, i16);
     env.state.stack.push(JavaValue::Int(val as i32));
 
-    Ok(env.state)
+    Ok(())
 }

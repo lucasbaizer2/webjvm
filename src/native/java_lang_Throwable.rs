@@ -6,7 +6,7 @@ use crate::{
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Throwable_getStackTraceElement(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let arr = env.get_field(env.get_current_instance(), "backtrace").as_array().unwrap();
+    let arr = env.get_field(env.get_current_instance()?, "backtrace").as_array().unwrap();
     let index = env.parameters[1].as_int().unwrap();
     let val = env.get_array_element(arr, index as usize);
     Ok(Some(val))
@@ -14,7 +14,7 @@ fn Java_java_lang_Throwable_getStackTraceElement(env: &JniEnv) -> RuntimeResult<
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Throwable_getStackTraceDepth(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let arr = env.get_field(env.get_current_instance(), "backtrace").as_array().unwrap();
+    let arr = env.get_field(env.get_current_instance()?, "backtrace").as_array().unwrap();
     Ok(Some(JavaValue::Int(env.get_array_length(arr) as i32)))
 }
 
@@ -53,9 +53,9 @@ fn Java_java_lang_Throwable_fillInStackTrace(env: &JniEnv) -> RuntimeResult<Opti
         )?;
         env.set_array_element(stacktrace, i - 1, JavaValue::Object(Some(ste)));
     }
-    env.set_field(env.get_current_instance(), "backtrace", JavaValue::Array(stacktrace));
+    env.set_field(env.get_current_instance()?, "backtrace", JavaValue::Array(stacktrace));
 
-    Ok(Some(JavaValue::Object(Some(env.get_current_instance()))))
+    Ok(Some(JavaValue::Object(Some(env.get_current_instance()?))))
 }
 
 pub fn initialize(cp: &mut Classpath) {

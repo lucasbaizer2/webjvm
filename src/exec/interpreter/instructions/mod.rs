@@ -73,7 +73,10 @@ macro_rules! pop {
 #[macro_export]
 macro_rules! pop_full {
     ( $env:expr ) => {{
-        $env.state.stack.pop_full().expect("stack underflow")
+        match $env.state.stack.pop_full() {
+            Some(val) => val,
+            None => return Err($env.jvm.throw_exception("java/lang/Error", Some("stack underflow"))),
+        }
     }};
 }
 
@@ -109,13 +112,14 @@ macro_rules! branch_to {
 mod array;
 mod constant;
 mod control_flow;
-mod fields;
+mod field;
 mod invoke;
 mod load;
 mod math;
 mod misc;
 mod stack;
 mod store;
+mod wide;
 
 pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0x00] = misc::nop;
@@ -319,10 +323,10 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0xb0] = control_flow::returnvalue;
     handlers[0xb1] = control_flow::returnvoid;
 
-    handlers[0xb2] = fields::getstatic;
-    handlers[0xb3] = fields::putstatic;
-    handlers[0xb4] = fields::getfield;
-    handlers[0xb5] = fields::putfield;
+    handlers[0xb2] = field::getstatic;
+    handlers[0xb3] = field::putstatic;
+    handlers[0xb4] = field::getfield;
+    handlers[0xb5] = field::putfield;
 
     handlers[0xb6] = invoke::invokevirtual;
     handlers[0xb7] = invoke::invokespecial;
@@ -339,6 +343,7 @@ pub fn initialize(handlers: &mut Vec<InstructionHandler>) {
     handlers[0xc1] = control_flow::instanceof;
     handlers[0xc2] = stack::pop; // TODO: monitorenter
     handlers[0xc3] = stack::pop; // TODO: monitorexit
+    handlers[0xc4] = wide::wide;
     handlers[0xc6] = control_flow::ifnull;
     handlers[0xc7] = control_flow::ifnonnull;
 }

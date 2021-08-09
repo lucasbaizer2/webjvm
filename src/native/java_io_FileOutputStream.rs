@@ -21,7 +21,7 @@ fn Java_java_io_FileOutputStream_writeBytes(env: &JniEnv) -> RuntimeResult<Optio
         local_buffer.push(env.get_array_element(byte_buffer, i as usize).as_byte().unwrap() as u8);
     }
 
-    let fos = env.get_current_instance();
+    let fos = env.get_current_instance()?;
     let fd_obj = env.get_field(fos, "fd").as_object().unwrap().unwrap();
     let fd = env.get_field(fd_obj, "fd").as_int().unwrap();
     if fd == 1 || fd == 2 {

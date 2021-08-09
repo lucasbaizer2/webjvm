@@ -3,7 +3,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::exec::jvm::Jvm;
+use crate::exec::{env::JniEnv, jvm::Jvm};
 use classfile_parser::{attribute_info::CodeAttribute, method_info::MethodAccessFlags, ClassAccessFlags};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +40,25 @@ impl JavaValue {
         }
     }
 
+    pub fn is_object(&self) -> bool {
+        matches!(self, JavaValue::Object(_))
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self, JavaValue::Array(_))
+    }
+
+    pub fn is_wide(&self) -> bool {
+        matches!(self, JavaValue::Double(_) | JavaValue::Long(_))
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(
+            self,
+            JavaValue::Byte(_) | JavaValue::Short(_) | JavaValue::Int(_) | JavaValue::Char(_) | JavaValue::Boolean(_)
+        )
+    }
+
     pub fn as_int(&self) -> Result<i32, ()> {
         match self {
             JavaValue::Byte(x) => Ok(*x as i32),
@@ -59,14 +78,6 @@ impl JavaValue {
             JavaValue::Long(x) => Ok(*x),
             _ => Err(()),
         }
-    }
-
-    pub fn is_object(&self) -> bool {
-        matches!(self, JavaValue::Object(_))
-    }
-
-    pub fn is_array(&self) -> bool {
-        matches!(self, JavaValue::Array(_))
     }
 
     pub fn as_array(&self) -> Result<usize, ()> {
@@ -287,9 +298,17 @@ impl JavaValueVec {
             .map(|val| match val {
                 JavaValue::Object(inner) => match inner {
                     Some(id) => {
-                        let heap = jvm.heap.borrow();
-                        let cid = heap.object_heap_map[id].class_id;
-                        heap.loaded_classes[cid].java_type.clone()
+                        let java_type = {
+                            let heap = jvm.heap.borrow();
+                            let cid = heap.object_heap_map[id].class_id;
+                            heap.loaded_classes[cid].java_type.clone()
+                        };
+                        if &java_type == "java/lang/String" {
+                            let env = JniEnv::empty(jvm);
+                            format!("String(\"{}\")", env.get_string(*id))
+                        } else {
+                            java_type
+                        }
                     }
                     None => String::from("null"),
                 },

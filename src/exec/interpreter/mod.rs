@@ -4,9 +4,9 @@ use std::cell::RefCell;
 
 mod instructions;
 
-pub type InstructionHandler = fn(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState>;
+pub type InstructionHandler = fn(env: &mut InstructionEnvironment) -> RuntimeResult<()>;
 
-pub fn empty_instruction_handler(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn empty_instruction_handler(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     Err(env.jvm.throw_exception("java/lang/Error", Some(&format!("Unhandled instruction: 0x{:x?}", env.instruction))))
 }
 
@@ -71,7 +71,18 @@ impl InstructionExecutor {
         match self.step_unchecked(jvm) {
             Ok(_) => Ok(()),
             Err(ex) => match ex {
-                JavaThrowable::Handled(_) => Ok(()),
+                JavaThrowable::Handled(ex_id) => {
+                    let mut csf = jvm.call_stack_frames.borrow_mut();
+                    let last_frame = csf.last_mut().unwrap();
+                    println!(
+                        "pushing exception to stack in {}.{}",
+                        last_frame.container_class, last_frame.container_method
+                    );
+                    last_frame.state.stack.push(JavaValue::Object(Some(ex_id)));
+                    println!("stack is now: {}, depth: {}", last_frame.state.stack.jvm_debug(jvm), csf.len());
+
+                    Ok(())
+                }
                 JavaThrowable::Unhandled(_) => Err(ex),
             },
         }
@@ -83,7 +94,7 @@ impl InstructionExecutor {
             self.instruction_count.replace(ic + 1);
         }
 
-        let (env, instruction, depth) = {
+        let (mut env, instruction, depth) = {
             let is_native_frame = {
                 let csf = jvm.call_stack_frames.borrow();
                 let frame = csf.last().expect("no stack frame present");
@@ -125,6 +136,10 @@ impl InstructionExecutor {
                 let instruction_address = frame.state.instruction_offset;
                 state.instruction_offset += 1;
 
+                if &frame.container_method == "loadClass(Ljava/lang/String;Z)Ljava/lang/Class;" {
+                    println!("0x{:x?}, depth={}, stack={}", instruction, depth, state.stack.jvm_debug(jvm));
+                }
+
                 let env = InstructionEnvironment {
                     jvm,
                     depth,
@@ -139,13 +154,14 @@ impl InstructionExecutor {
         };
 
         let handler = INSTRUCTION_HANDLERS[instruction as usize];
-        let new_state = handler(env)?;
+        let result = handler(&mut env);
 
         let mut csf = jvm.call_stack_frames.borrow_mut();
         if csf.len() == depth {
-            csf.last_mut().unwrap().state = new_state;
+            let last_frame = csf.last_mut().unwrap();
+            last_frame.state = env.state;
         }
 
-        Ok(())
+        result
     }
 }

@@ -1,11 +1,11 @@
 use crate::{
     exec::interpreter::InstructionEnvironment,
-    model::{CallStackFrameState, JavaArrayType, JavaValue, RuntimeResult},
+    model::{JavaArrayType, JavaValue, RuntimeResult},
     util::get_constant_string,
 };
 
-pub fn newarray(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (primitive_type,) = take_values!(&mut env, u8);
+pub fn newarray(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (primitive_type,) = take_values!(env, u8);
     let array_type = match primitive_type {
         4 => JavaArrayType::Boolean,
         5 => JavaArrayType::Char,
@@ -18,17 +18,17 @@ pub fn newarray(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrame
         _ => panic!("invalid array type code"),
     };
 
-    let length = pop!(&mut env).as_int().expect("expected integral value");
+    let length = pop!(env).as_int().expect("expected integral value");
     let arr = env.jvm.create_empty_array(array_type, length as usize);
 
     env.state.stack.push(JavaValue::Array(arr));
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn anewarray(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (type_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn anewarray(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (type_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     let type_str = get_constant_string(const_pool, type_ref_id);
     let type_id = env.jvm.ensure_class_loaded(type_str, true)?;
 
@@ -37,29 +37,29 @@ pub fn anewarray(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
 
     env.state.stack.push(JavaValue::Array(arr));
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn arraylength(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let arrayref_id = match pop!(&mut env) {
+pub fn arraylength(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let arrayref_id = match pop!(env) {
         JavaValue::Array(id) => id,
         JavaValue::Object(_) => return Err(env.jvm.throw_npe()),
-        _ => panic!("invalid array instance ID"),
+        _ => return Err(env.jvm.throw_exception("java/lang/Error", Some("invalid array instance ID"))),
     };
     let heap = env.jvm.heap.borrow();
-    let arrayref = heap.array_heap_map.get(&arrayref_id).expect("invalid array instance ID");
+    let arrayref = heap.array_heap_map.get(&arrayref_id).expect("arraylength: invalid array instance ID");
     env.state.stack.push(JavaValue::Int(arrayref.values.len() as i32));
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn arraystore(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let value = pop!(&mut env);
-    let index = pop!(&mut env).as_int().expect("invalid array index");
-    let arrayref_id = match pop!(&mut env) {
+pub fn arraystore(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let value = pop_full!(env);
+    let index = pop!(env).as_int().expect("invalid array index");
+    let arrayref_id = match pop!(env) {
         JavaValue::Array(id) => id,
         JavaValue::Object(None) => return Err(env.jvm.throw_npe()),
-        _ => panic!("invalid array instance ID"),
+        _ => return Err(env.jvm.throw_exception("java/lang/Error", Some("arraystore: invalid array instance ID"))),
     };
 
     let mut heap = env.jvm.heap.borrow_mut();
@@ -72,15 +72,15 @@ pub fn arraystore(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFra
         arrayref.values[index as usize] = value;
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn arrayload(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let index = pop!(&mut env).as_int().expect("invalid array index");
-    let arrayref_id = match pop!(&mut env) {
+pub fn arrayload(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let index = pop!(env).as_int().expect("invalid array index");
+    let arrayref_id = match pop!(env) {
         JavaValue::Array(id) => id,
         JavaValue::Object(None) => return Err(env.jvm.throw_npe()),
-        _ => panic!("invalid array instance ID"),
+        _ => return Err(env.jvm.throw_exception("java/lang/Error", Some("arrayload: invalid array instance ID"))),
     };
 
     let heap = env.jvm.heap.borrow();
@@ -95,5 +95,5 @@ pub fn arrayload(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFram
         env.state.stack.push(val);
     }
 
-    Ok(env.state)
+    Ok(())
 }

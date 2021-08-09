@@ -254,8 +254,14 @@ impl<'a> JniEnv<'a> {
         self.jvm.throw_exception(exception_class, message)
     }
 
-    pub fn get_current_instance(&self) -> usize {
-        self.parameters[0].as_object().expect("expecting object parameter").unwrap()
+    pub fn get_current_instance(&self) -> RuntimeResult<usize> {
+        match self.parameters[0] {
+            JavaValue::Object(id) => match id {
+                Some(obj_id) => Ok(obj_id),
+                None => Err(self.throw_exception("java/lang/NullPointerException", None)),
+            },
+            _ => Err(self.throw_exception("java/lang/Error", Some("expecting object parameter"))),
+        }
     }
 
     pub fn get_class_file(&self, class_id: usize) -> &ClassFile {
@@ -271,7 +277,7 @@ pub fn initialize(jvm: &mut Jvm) -> RuntimeResult<()> {
     let virtual_frame = CallStackFrame {
         container_class: String::from("webjvm/lang/Main"),
         container_method: String::from("main()V"),
-        access_flags: MethodAccessFlags::empty(),
+        access_flags: MethodAccessFlags::STATIC,
         instructions: Vec::new(),
         is_native_frame: false,
         metadata: None,

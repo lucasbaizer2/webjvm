@@ -1,94 +1,94 @@
 use crate::{
     exec::interpreter::InstructionEnvironment,
-    model::{CallStackFrameState, JavaValue, RuntimeResult},
+    model::{JavaValue, RuntimeResult},
 };
 use std::{cmp::Ordering, num::Wrapping};
 
 macro_rules! define_imath {
     ( $insn:ident, $op:tt ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-            let rhs = Wrapping(pop!(&mut env).as_int().expect("expecting integral value"));
-            let lhs = Wrapping(pop!(&mut env).as_int().expect("expecting integral value"));
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+            let rhs = Wrapping(pop!(env).as_int().expect("expecting integral value"));
+            let lhs = Wrapping(pop!(env).as_int().expect("expecting integral value"));
             env.state.stack.push(JavaValue::Int((lhs $op rhs).0));
 
-            Ok(env.state)
+            Ok(())
         }
     }
 }
 
 macro_rules! define_ishift {
     ( $insn:ident, $op:tt, $int_type:ty ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-            let rhs = pop!(&mut env).as_int().expect("expecting integral value") & 0b11111;
-            let lhs = pop!(&mut env).as_int().expect("expecting integral value");
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+            let rhs = pop!(env).as_int().expect("expecting integral value") & 0b11111;
+            let lhs = pop!(env).as_int().expect("expecting integral value");
             env.state.stack.push(JavaValue::Int(((lhs as $int_type) $op (rhs as $int_type)) as i32));
 
-            Ok(env.state)
+            Ok(())
         }
     }
 }
 
 macro_rules! define_lshift {
     ( $insn:ident, $op:tt, $int_type:ty ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-            let rhs = pop!(&mut env).as_int().expect("expecting integral value") & 0b111111;
-            let lhs = pop_full!(&mut env).as_long().expect("expecting long value");
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+            let rhs = pop!(env).as_int().expect("expecting integral value") & 0b111111;
+            let lhs = pop_full!(env).as_long().expect("expecting long value");
             env.state.stack.push(JavaValue::Long(((lhs as $int_type) $op (rhs as $int_type)) as i64));
 
-            Ok(env.state)
+            Ok(())
         }
     }
 }
 
 macro_rules! define_lmath {
     ( $insn:ident, $op:tt ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-            let rhs = Wrapping(pop_full!(&mut env).as_long().expect("expecting long value"));
-            let lhs = Wrapping(pop_full!(&mut env).as_long().expect("expecting long value"));
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+            let rhs = Wrapping(pop_full!(env).as_long().expect("expecting long value"));
+            let lhs = Wrapping(pop_full!(env).as_long().expect("expecting long value"));
             env.state.stack.push(JavaValue::Long((lhs $op rhs).0));
 
-            Ok(env.state)
+            Ok(())
         }
     }
 }
 
 macro_rules! define_fmath {
     ( $insn:ident, $op:tt ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-            let rhs = pop!(&mut env).as_float().expect("expecting float value");
-            let lhs = pop!(&mut env).as_float().expect("expecting float value");
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+            let rhs = pop!(env).as_float().expect("expecting float value");
+            let lhs = pop!(env).as_float().expect("expecting float value");
             env.state.stack.push(JavaValue::Float(lhs $op rhs));
 
-            Ok(env.state)
+            Ok(())
         }
     }
 }
 
 macro_rules! define_dmath {
     ( $insn:ident, $op:tt ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-            let rhs = pop_full!(&mut env).as_double().expect("expecting double value");
-            let lhs = pop_full!(&mut env).as_double().expect("expecting double value");
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+            let rhs = pop_full!(env).as_double().expect("expecting double value");
+            let lhs = pop_full!(env).as_double().expect("expecting double value");
             env.state.stack.push(JavaValue::Double(lhs $op rhs));
 
-            Ok(env.state)
+            Ok(())
         }
     }
 }
 
 macro_rules! define_cast {
     ( $insn:ident, $from:ident, $jt:ident, $cast:ty ) => {
-        pub fn $insn(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+        pub fn $insn(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
             use paste::paste;
 
             paste! {
-                let int = match pop_full!(&mut env).[<as_ $from>]() {
+                let int = match pop_full!(env).[<as_ $from>]() {
                     Ok(e) => e,
                     Err(_) => panic!(),
                 };
                 env.state.stack.push(JavaValue::$jt(int as $cast));
 
-                Ok(env.state)
+                Ok(())
             }
         }
     };
@@ -151,26 +151,34 @@ define_cast!(l2i, long, Int, i32);
 define_cast!(l2f, long, Float, f32);
 define_cast!(l2d, long, Double, f64);
 
-pub fn iinc(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (index, value) = take_values!(&mut env, u8, i8);
+pub fn iinc(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (index, value) = take_values!(env, u8, i8);
     let current_val = env.state.lvt[index as usize].as_int().expect("expecting integral value");
     env.state.lvt[index as usize] = JavaValue::Int(current_val + value as i32);
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn dcmpg(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn iincwide(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (index, value) = take_values!(env, u16, i16);
+    let current_val = env.state.lvt[index as usize].as_int().expect("expecting integral value");
+    env.state.lvt[index as usize] = JavaValue::Int(current_val + value as i32);
+
+    Ok(())
+}
+
+pub fn dcmpg(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     compare_doubles(env, true)
 }
 
-pub fn dcmpl(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn dcmpl(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     compare_doubles(env, false)
 }
 
 #[allow(clippy::float_cmp)]
-pub fn compare_doubles(mut env: InstructionEnvironment, greater: bool) -> RuntimeResult<CallStackFrameState> {
-    let rhs = pop_full!(&mut env).as_double().expect("expecting double");
-    let lhs = pop_full!(&mut env).as_double().expect("expecting double");
+pub fn compare_doubles(env: &mut InstructionEnvironment, greater: bool) -> RuntimeResult<()> {
+    let rhs = pop_full!(env).as_double().expect("expecting double");
+    let lhs = pop_full!(env).as_double().expect("expecting double");
     if lhs.is_nan() || rhs.is_nan() {
         let nan_value = match greater {
             true => 1,
@@ -185,21 +193,21 @@ pub fn compare_doubles(mut env: InstructionEnvironment, greater: bool) -> Runtim
         env.state.stack.push(JavaValue::Int(-1));
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn fcmpg(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn fcmpg(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     compare_floats(env, true)
 }
 
-pub fn fcmpl(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn fcmpl(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     compare_floats(env, false)
 }
 
 #[allow(clippy::float_cmp)]
-pub fn compare_floats(mut env: InstructionEnvironment, greater: bool) -> RuntimeResult<CallStackFrameState> {
-    let rhs = pop!(&mut env).as_float().expect("expecting float");
-    let lhs = pop!(&mut env).as_float().expect("expecting float");
+pub fn compare_floats(env: &mut InstructionEnvironment, greater: bool) -> RuntimeResult<()> {
+    let rhs = pop!(env).as_float().expect("expecting float");
+    let lhs = pop!(env).as_float().expect("expecting float");
     if lhs.is_nan() || rhs.is_nan() {
         let nan_value = match greater {
             true => 1,
@@ -214,12 +222,12 @@ pub fn compare_floats(mut env: InstructionEnvironment, greater: bool) -> Runtime
         env.state.stack.push(JavaValue::Int(-1));
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn lcmp(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let rhs = pop_full!(&mut env).as_long().unwrap();
-    let lhs = pop_full!(&mut env).as_long().unwrap();
+pub fn lcmp(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let rhs = pop_full!(env).as_long().unwrap();
+    let lhs = pop_full!(env).as_long().unwrap();
     let val = match lhs.cmp(&rhs) {
         Ordering::Greater => 1,
         Ordering::Less => -1,
@@ -227,5 +235,5 @@ pub fn lcmp(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameStat
     };
     env.state.stack.push(JavaValue::Int(val));
 
-    Ok(env.state)
+    Ok(())
 }

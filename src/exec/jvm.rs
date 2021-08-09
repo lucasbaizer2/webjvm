@@ -39,7 +39,7 @@ impl Jvm {
         }
     }
 
-    pub fn is_instance_of(&self, val: &JavaValue, compare_type: &str) -> RuntimeResult<bool> {
+    pub fn is_instance_of(&self, val: &JavaValue, compare_type: &str, null_is_instance: bool) -> RuntimeResult<bool> {
         let res = match val {
             JavaValue::Object(instance) => match instance {
                 Some(instance_id) => {
@@ -50,7 +50,7 @@ impl Jvm {
                     };
                     self.is_assignable_from(compare_type, class_id)?
                 }
-                None => true,
+                None => null_is_instance,
             },
             JavaValue::Array(_) => {
                 // TODO
@@ -341,7 +341,25 @@ impl Jvm {
             }
 
             let env = JniEnv::empty(self);
-            env.invoke_static_method(class_id, "<clinit>", "()V", &[])?;
+            if let Err(err) = env.invoke_static_method(class_id, "<clinit>", "()V", &[]) {
+                let new_error = match err {
+                    JavaThrowable::Unhandled(unhandled) => {
+                        let ex_cid = env.get_class_id("java/lang/ExceptionInInitializerError")?;
+                        let ex_instance = env.new_instance(ex_cid)?;
+                        env.invoke_instance_method(
+                            InvokeType::Special,
+                            ex_instance,
+                            ex_cid,
+                            "<init>",
+                            "(Ljava/lang/Throwable;)V",
+                            &[JavaValue::Object(Some(unhandled))],
+                        )?;
+                        self.throw_exception_ref(ex_instance)
+                    }
+                    other => other,
+                };
+                return Err(new_error);
+            }
         }
 
         Ok(())
@@ -380,12 +398,14 @@ impl Jvm {
     }
 
     pub fn throw_exception_ref(&self, reference: usize) -> JavaThrowable {
-        let exception_class = {
+        let (exception_class, exception_class_id) = {
             let heap = self.heap.borrow();
             let obj = &heap.object_heap_map.get(&reference).expect("expecting object ref");
             let cls = &heap.loaded_classes[obj.class_id];
-            cls.java_type.clone()
+            (cls.java_type.clone(), obj.class_id)
         };
+
+        log_error(&format!("Exception thrown: {}", exception_class));
 
         let stacktrace = {
             let csf = self.call_stack_frames.borrow();
@@ -400,7 +420,8 @@ impl Jvm {
                     &mut stacktrace,
                     "\tat {}.{}{}",
                     &frame.container_class[frame.container_class.rfind('/').map(|x| x + 1).unwrap_or(0)..],
-                    &frame.container_method[0..frame.container_method.find('(').unwrap()],
+                    // &frame.container_method[0..frame.container_method.find('(').unwrap()],
+                    frame.container_method,
                     source
                 )
                 .unwrap();
@@ -418,7 +439,7 @@ impl Jvm {
                 if let Some(metadata) = top_frame.metadata.as_ref() {
                     for exception_item in &metadata.exception_table {
                         if top_frame.state.instruction_offset >= exception_item.start_pc as usize
-                            && top_frame.state.instruction_offset <= exception_item.end_pc as usize
+                            && top_frame.state.instruction_offset < exception_item.end_pc as usize
                         {
                             if exception_item.catch_type == 0 {
                                 // TODO: finally blocks
@@ -428,11 +449,13 @@ impl Jvm {
                                 self.classpath.get_classpath_entry(&top_frame.container_class).unwrap();
                             let catch_type =
                                 get_constant_string(&container_class.const_pool, exception_item.catch_type);
-                            // TODO: make this polymorphic
-                            if &exception_class == catch_type {
-                                // let top_frame_mut = csf
+                            if self.is_assignable_from(catch_type, exception_class_id).unwrap() {
+                                println!(
+                                    "Catching exception in function: {}.{}",
+                                    top_frame.container_class, top_frame.container_method
+                                );
                                 top_frame.state.instruction_offset = exception_item.handler_pc as usize;
-                                return JavaThrowable::Handled(0);
+                                return JavaThrowable::Handled(reference);
                             }
                         }
                     }

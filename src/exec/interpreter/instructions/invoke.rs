@@ -1,6 +1,6 @@
 use crate::{
     exec::interpreter::InstructionEnvironment,
-    model::{CallStackFrame, CallStackFrameState, JavaValue, JavaValueVec, MethodDescriptor, RuntimeResult},
+    model::{CallStackFrame, JavaValue, JavaValueVec, MethodDescriptor, RuntimeResult},
     util::{get_constant_name_and_type, get_constant_string},
     InvokeType,
 };
@@ -32,14 +32,14 @@ fn create_stack_frame(
     });
 
     for _ in 0..args_len {
-        let val = env.state.stack.pop().expect("stack underflow");
+        let val = pop!(env);
         args.push_exact(val);
     }
 
     let instance = match invoke_type {
         InvokeType::Static => None,
         _ => {
-            let object_instance = env.state.stack.pop().expect("stack underflow");
+            let object_instance = pop!(env);
             match object_instance {
                 JavaValue::Object(instance_id) => {
                     if instance_id.is_none() {
@@ -91,65 +91,62 @@ fn create_stack_frame(
     Ok(frame)
 }
 
-pub fn invokevirtual(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn invokevirtual(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     invoke_instance_method(env, false)
 }
 
-pub fn invokeinterface(env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
+pub fn invokeinterface(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
     invoke_instance_method(env, true)
 }
 
-pub fn invokespecial(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (method_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn invokespecial(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (method_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     match &const_pool[method_ref_id as usize - 1] {
         ConstantInfo::MethodRef(mr) => {
-            let stack_frame = create_stack_frame(&mut env, InvokeType::Special, const_pool, mr)?;
+            let stack_frame = create_stack_frame(env, InvokeType::Special, const_pool, mr)?;
 
             {
                 let mut csf = env.jvm.call_stack_frames.borrow_mut();
                 csf.push(stack_frame);
             }
             env.executor.step_until_stack_depth(env.jvm, env.depth)?;
-            update_stack!(&mut env);
+            update_stack!(env);
         }
         x => panic!("bad method ref: {:?}", x),
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
-pub fn invokestatic(mut env: InstructionEnvironment) -> RuntimeResult<CallStackFrameState> {
-    let (method_ref_id,) = take_values!(&mut env, u16);
-    let const_pool = use_const_pool!(&mut env);
+pub fn invokestatic(env: &mut InstructionEnvironment) -> RuntimeResult<()> {
+    let (method_ref_id,) = take_values!(env, u16);
+    let const_pool = use_const_pool!(env);
     match &const_pool[method_ref_id as usize - 1] {
         ConstantInfo::MethodRef(mr) => {
-            let stack_frame = create_stack_frame(&mut env, InvokeType::Static, const_pool, mr)?;
+            let stack_frame = create_stack_frame(env, InvokeType::Static, const_pool, mr)?;
 
             {
                 let mut csf = env.jvm.call_stack_frames.borrow_mut();
                 csf.push(stack_frame);
             }
             env.executor.step_until_stack_depth(env.jvm, env.depth)?;
-            update_stack!(&mut env);
+            update_stack!(env);
         }
         x => panic!("bad method ref: {:?}", x),
     }
 
-    Ok(env.state)
+    Ok(())
 }
 
 #[inline]
-fn invoke_instance_method(
-    mut env: InstructionEnvironment,
-    is_interface_method: bool,
-) -> RuntimeResult<CallStackFrameState> {
-    let (index,) = take_values!(&mut env, u16);
+fn invoke_instance_method(env: &mut InstructionEnvironment, is_interface_method: bool) -> RuntimeResult<()> {
+    let (index,) = take_values!(env, u16);
     if is_interface_method {
-        take_values!(&mut env, u16);
+        take_values!(env, u16);
     }
 
-    let const_pool = use_const_pool!(&mut env);
+    let const_pool = use_const_pool!(env);
     let mr = match &const_pool[index as usize - 1] {
         ConstantInfo::MethodRef(mr) => mr.clone(),
         ConstantInfo::InterfaceMethodRef(imr) => MethodRefConstant {
@@ -158,13 +155,13 @@ fn invoke_instance_method(
         },
         x => panic!("bad method ref: {:?}", x),
     };
-    let stack_frame = create_stack_frame(&mut env, InvokeType::Virtual, const_pool, &mr)?;
+    let stack_frame = create_stack_frame(env, InvokeType::Virtual, const_pool, &mr)?;
     {
         let mut csf = env.jvm.call_stack_frames.borrow_mut();
         csf.push(stack_frame);
     }
     env.executor.step_until_stack_depth(env.jvm, env.depth)?;
-    update_stack!(&mut env);
+    update_stack!(env);
 
-    Ok(env.state)
+    Ok(())
 }

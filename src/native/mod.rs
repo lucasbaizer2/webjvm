@@ -37,11 +37,13 @@ mod java_lang_ClassLoader;
 mod java_lang_Double;
 mod java_lang_Float;
 mod java_lang_Object;
+mod java_lang_Runtime;
 mod java_lang_String;
 mod java_lang_System;
 mod java_lang_Thread;
 mod java_lang_Throwable;
-mod java_lang_Runtime;
+
+mod java_lang_reflect_Array;
 
 mod java_io_FileDescriptor;
 mod java_io_FileInputStream;
@@ -53,6 +55,7 @@ mod java_security_AccessController;
 mod java_util_concurrent_atomic_AtomicLong;
 
 mod sun_misc_Signal;
+mod sun_misc_URLClassPath;
 mod sun_misc_Unsafe;
 mod sun_misc_VM;
 
@@ -71,6 +74,8 @@ pub fn initialize(cp: &mut Classpath) {
     java_lang_Throwable::initialize(cp);
     java_lang_Runtime::initialize(cp);
 
+    java_lang_reflect_Array::initialize(cp);
+
     java_io_FileInputStream::initialize(cp);
     java_io_FileOutputStream::initialize(cp);
     java_io_FileDescriptor::initialize(cp);
@@ -83,6 +88,7 @@ pub fn initialize(cp: &mut Classpath) {
     sun_misc_Unsafe::initialize(cp);
     sun_misc_VM::initialize(cp);
     sun_misc_Signal::initialize(cp);
+    sun_misc_URLClassPath::initialize(cp);
 
     sun_reflect_Reflection::initialize(cp);
     sun_reflect_NativeConstructorAccessorImpl::initialize(cp);

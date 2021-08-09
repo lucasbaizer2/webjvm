@@ -18,7 +18,7 @@ fn Java_java_lang_Class_desiredAssertionStatus0(_: &JniEnv) -> RuntimeResult<Opt
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getName0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
+    let class_name = env.get_internal_metadata(env.get_current_instance()?, "class_name").unwrap().into_string();
     let non_internalized = class_name.replace("/", ".");
     let result = env.new_string(&non_internalized);
     Ok(Some(JavaValue::Object(Some(result))))
@@ -26,13 +26,13 @@ fn Java_java_lang_Class_getName0(env: &JniEnv) -> RuntimeResult<Option<JavaValue
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_isArray(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
+    let class_name = env.get_internal_metadata(env.get_current_instance()?, "class_name").unwrap().into_string();
     Ok(Some(JavaValue::Boolean(class_name.starts_with('['))))
 }
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getComponentType(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
+    let class_name = env.get_internal_metadata(env.get_current_instance()?, "class_name").unwrap().into_string();
     if !class_name.starts_with('[') {
         return Ok(Some(JavaValue::Object(None)));
     }
@@ -49,7 +49,7 @@ fn Java_java_lang_Class_getComponentType(env: &JniEnv) -> RuntimeResult<Option<J
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getPrimitiveClass(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_name_id = env.get_current_instance();
+    let class_name_id = env.get_current_instance()?;
     let class_name = env.get_string(class_name_id);
     let signature_name = match class_name.as_str() {
         "byte" => "B",
@@ -82,7 +82,7 @@ fn Java_java_lang_Class_forName0(env: &JniEnv) -> RuntimeResult<Option<JavaValue
 }
 
 fn get_declared_methods(env: &JniEnv, constructors: bool) -> RuntimeResult<usize> {
-    let class_id = env.get_internal_metadata(env.get_current_instance(), "class_id").unwrap().into_usize();
+    let class_id = env.get_internal_metadata(env.get_current_instance()?, "class_id").unwrap().into_usize();
     let class_file = env.get_class_file(class_id);
     let methods = &class_file.methods;
 
@@ -120,7 +120,7 @@ fn get_declared_methods(env: &JniEnv, constructors: bool) -> RuntimeResult<usize
         }
         let reflected_method = env.new_instance(method_type_id)?;
         let method_name_interned = env.new_interned_string(method_name);
-        env.set_field(reflected_method, "clazz", JavaValue::Object(Some(env.get_current_instance())));
+        env.set_field(reflected_method, "clazz", JavaValue::Object(Some(env.get_current_instance()?)));
         env.set_field(reflected_method, "slot", JavaValue::Int(starting_offset as i32 + i as i32));
         if !constructors {
             env.set_field(reflected_method, "name", JavaValue::Object(Some(method_name_interned)));
@@ -161,7 +161,7 @@ fn Java_java_lang_Class_getDeclaredConstructors0(env: &JniEnv) -> RuntimeResult<
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_id = env.get_internal_metadata(env.get_current_instance(), "class_id").unwrap().into_usize();
+    let class_id = env.get_internal_metadata(env.get_current_instance()?, "class_id").unwrap().into_usize();
     let class_file = env.get_class_file(class_id);
     let fields = &class_file.fields;
 
@@ -179,7 +179,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
     for (i, field) in fields.iter().enumerate() {
         let reflected_field = env.new_instance(field_type_id)?;
         let field_name = env.new_interned_string(get_constant_string(&class_file.const_pool, field.name_index));
-        env.set_field(reflected_field, "clazz", JavaValue::Object(Some(env.get_current_instance())));
+        env.set_field(reflected_field, "clazz", JavaValue::Object(Some(env.get_current_instance()?)));
         env.set_field(reflected_field, "slot", JavaValue::Int(starting_offset as i32 + i as i32));
         env.set_field(reflected_field, "name", JavaValue::Object(Some(field_name)));
 
@@ -201,7 +201,7 @@ fn Java_java_lang_Class_getDeclaredFields0(env: &JniEnv) -> RuntimeResult<Option
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_isPrimitive(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_name = env.get_internal_metadata(env.get_current_instance(), "class_name").unwrap().into_string();
+    let class_name = env.get_internal_metadata(env.get_current_instance()?, "class_name").unwrap().into_string();
 
     let is_primitive =
         matches!(class_name.chars().next().unwrap(), 'B' | 'S' | 'I' | 'J' | 'F' | 'D' | 'Z' | 'C' | 'V');
@@ -210,7 +210,7 @@ fn Java_java_lang_Class_isPrimitive(env: &JniEnv) -> RuntimeResult<Option<JavaVa
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_isAssignableFrom(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let this_class = env.get_current_instance();
+    let this_class = env.get_current_instance()?;
     let compare_class = env.parameters[1].as_object().unwrap().unwrap();
 
     let this_class_name = env.get_internal_metadata(this_class, "class_name").unwrap().into_string();
@@ -222,21 +222,21 @@ fn Java_java_lang_Class_isAssignableFrom(env: &JniEnv) -> RuntimeResult<Option<J
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_isInterface(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_id = env.get_internal_metadata(env.get_current_instance(), "class_id").unwrap().into_usize();
+    let class_id = env.get_internal_metadata(env.get_current_instance()?, "class_id").unwrap().into_usize();
     let class_file = env.get_class_file(class_id);
     Ok(Some(JavaValue::Boolean(class_file.access_flags.contains(ClassAccessFlags::INTERFACE))))
 }
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getModifiers(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_id = env.get_internal_metadata(env.get_current_instance(), "class_id").unwrap().into_usize();
+    let class_id = env.get_internal_metadata(env.get_current_instance()?, "class_id").unwrap().into_usize();
     let class_file = env.get_class_file(class_id);
     Ok(Some(JavaValue::Int(class_file.access_flags.bits() as i32)))
 }
 
 #[allow(non_snake_case)]
 fn Java_java_lang_Class_getSuperclass(env: &JniEnv) -> RuntimeResult<Option<JavaValue>> {
-    let class_id = env.get_internal_metadata(env.get_current_instance(), "class_id").unwrap().into_usize();
+    let class_id = env.get_internal_metadata(env.get_current_instance()?, "class_id").unwrap().into_usize();
 
     let heap = env.jvm.heap.borrow();
     let id = match heap.loaded_classes[class_id].superclass_id {
